@@ -1,9 +1,22 @@
 # Exclude generated/system content
 stats/
 error/
+cache/
+tmp/
+wccms/
+
+# Exclude dependency directories installed on the server
+vendor/
+node_modules/
 
 # Exclude local/server-specific files
 .htaccess
+.env
+.env.*
 *.code-workspace
 *.log
+*.bak
+*.tmp
+*.swp
+*~
 .DS_Store
