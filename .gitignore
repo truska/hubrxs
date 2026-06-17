@@ -1,0 +1,9 @@
+# Exclude generated/system content
+stats/
+error/
+
+# Exclude local/server-specific files
+.htaccess
+*.code-workspace
+*.log
+.DS_Store
