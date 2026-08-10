@@ -1829,6 +1829,10 @@ button.password-reveal svg {
   justify-content: flex-end;
 }
 
+.portal-report-page .report-table-actions .but4 i {
+  margin-right: 6px;
+}
+
 .portal-report-page .import-data-controls {
   grid-template-columns: minmax(180px, 240px) auto minmax(0, 1fr);
 }
