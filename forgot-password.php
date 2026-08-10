@@ -32,12 +32,16 @@ $messages = hub_flash_messages();
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><?php echo hub_h(HUB_APP_NAME); ?> | Reset password</title>
-  <link rel="stylesheet" href="/css/hub.css">
+  <link rel="stylesheet" href="/css/hub.css?v=20260714-auth-brand">
 </head>
-<body>
-  <div class="wrap">
+<body class="auth-page">
+  <header class="auth-header" aria-label="<?php echo hub_h(HUB_APP_NAME); ?>">
+    <a href="/dashboard.php" aria-label="<?php echo hub_h(HUB_APP_NAME); ?> dashboard">
+      <img src="<?php echo hub_h(hub_site_logo_url()); ?>" alt="<?php echo hub_h(HUB_APP_NAME); ?>">
+    </a>
+  </header>
+  <div class="wrap auth-wrap">
     <div class="card">
-      <p class="brand"><?php echo hub_h(HUB_APP_NAME); ?></p>
       <h1>Reset your password</h1>
       <p>Enter your email and we will send a reset link (valid for 30 minutes).</p>
 
@@ -58,11 +62,11 @@ $messages = hub_flash_messages();
         <input type="hidden" name="csrf" value="<?php echo hub_h(hub_csrf_token()); ?>">
         <div>
           <label for="email">Email</label>
-          <input id="email" name="email" type="email" required autocomplete="email" value="<?php echo hub_h($_POST['email'] ?? ''); ?>">
+          <input id="email" name="email" type="email" required autocomplete="email" value="<?php echo hub_h($_POST['email'] ?? $_GET['email'] ?? ''); ?>">
         </div>
-        <button type="submit">Send reset link</button>
+        <button class="but1" type="submit">Send reset link</button>
         <div class="links">
-          <a href="index.php">Back to login</a>
+          <a class="but3" href="index.php">Back to login</a>
         </div>
       </form>
     </div>

@@ -1,40 +1,48 @@
 <?php
-require_once __DIR__ . '/includes/app/auth.php';
+require_once __DIR__ . '/includes/app/announcements.php';
+require_once __DIR__ . '/includes/app/banners.php';
+require_once __DIR__ . '/includes/app/dashboard_buttons.php';
+require_once __DIR__ . '/includes/app/images.php';
 hub_require_login();
 
 $user = hub_current_user();
 $messages = hub_flash_messages();
+$portalDisplayName = trim((string) ($user['display_name'] ?? ''));
+if ($portalDisplayName === '') {
+  $portalDisplayName = trim((string) ($user['email'] ?? ''));
+  if (strpos($portalDisplayName, '@') !== false) {
+    $portalDisplayName = strstr($portalDisplayName, '@', true) ?: $portalDisplayName;
+  }
+}
 
 global $pdo, $DB_OK;
 
-$showReport = (isset($_GET['report']) && $_GET['report'] === 'sample1');
-$customerSelectError = null;
+$portalAccountImage = '';
+if ($DB_OK && ($pdo instanceof PDO) && hub_table_exists('hub_user')) {
+  $stmtAccountImage = $pdo->prepare('SELECT image FROM hub_user WHERE id = :id AND archived = 0 LIMIT 1');
+  $stmtAccountImage->execute([':id' => (int) ($user['id'] ?? 0)]);
+  $accountImageValue = trim((string) ($stmtAccountImage->fetchColumn() ?: ''));
+  if ($accountImageValue !== '') {
+    $portalAccountImage = hub_image_public_path('content', 'xs', $accountImageValue);
+  }
+}
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && hub_is_admin() && isset($_POST['action']) && $_POST['action'] === 'select_customer') {
-  if (!hub_verify_csrf($_POST['csrf'] ?? '')) {
-    $customerSelectError = 'Session expired. Please try again.';
-  } else {
-    $selected = trim((string) ($_POST['customer_id'] ?? ''));
-    if ($selected === '') {
-      hub_set_customer_override(null);
-      hub_flash('success', 'Viewing as your own customer.');
-    } else {
-      $selectedId = (int) $selected;
-      $exists = false;
-      if ($DB_OK && ($pdo instanceof PDO) && hub_table_exists('hub_customer')) {
-        $stmtCheck = $pdo->prepare('SELECT id FROM hub_customer WHERE id = :id LIMIT 1');
-        $stmtCheck->execute([':id' => $selectedId]);
-        $exists = (bool) $stmtCheck->fetchColumn();
-      }
-      if ($exists) {
-        hub_set_customer_override($selectedId);
-        hub_flash('success', 'Viewing as selected customer.');
+if (
+  ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'
+  && isset($_POST['action'])
+  && in_array($_POST['action'], ['dismiss_announcement', 'reveal_announcement'], true)
+) {
+  if (hub_verify_csrf($_POST['csrf'] ?? '')) {
+    $announcementId = (int) ($_POST['announcement_id'] ?? 0);
+    if ($announcementId > 0) {
+      if ($_POST['action'] === 'dismiss_announcement') {
+        hub_dismiss_announcement($announcementId, (int) ($user['id'] ?? 0));
       } else {
-        $customerSelectError = 'Customer not found.';
+        hub_reveal_announcement($announcementId, (int) ($user['id'] ?? 0));
       }
     }
   }
-  hub_redirect('dashboard.php' . ($showReport ? '?report=sample1#sample1' : ''));
+  hub_redirect('dashboard.php');
 }
 
 $effectiveCustomerId = hub_effective_customer_id($user);
@@ -51,145 +59,253 @@ if ($effectiveCustomerId && hub_table_exists('hub_customer') && $DB_OK && ($pdo 
   }
 }
 
-function hub_fmt_date(?string $value): string {
-  if (!$value) {
+function hub_portal_shipping_count_for_customer_id(?int $customerId, ?array $user = null): int {
+  global $pdo, $DB_OK;
+
+  if (
+    !$customerId
+    || !$DB_OK
+    || !($pdo instanceof PDO)
+    || !hub_table_exists('hub_so_live')
+    || !hub_table_column_exists('hub_so_live', 'customer_id')
+  ) {
+    return 0;
+  }
+
+  $params = [':customer_id' => $customerId];
+  $sourceAccessSql = hub_table_column_exists('hub_so_live', 'source_id')
+    ? hub_user_source_access_sql('source_id', $user, $params, 'shipping_source')
+    : '';
+  $projectAccessSql = hub_table_column_exists('hub_so_live', 'project_id')
+    ? hub_user_project_code_access_sql('project_id', $user, $params, 'shipping_project')
+    : '';
+
+  $stmt = $pdo->prepare(
+    'SELECT COUNT(*)
+     FROM hub_so_live
+     WHERE customer_id = :customer_id
+       AND archived = 0
+       AND show_on_web = 1
+       AND published = 1' . $sourceAccessSql . $projectAccessSql
+  );
+  $stmt->execute($params);
+
+  return (int) $stmt->fetchColumn();
+}
+
+function hub_portal_inventory_count_for_customer_id(?int $customerId, ?array $user = null): int {
+  global $pdo, $DB_OK;
+
+  if (
+    !$customerId
+    || !$DB_OK
+    || !($pdo instanceof PDO)
+    || !hub_table_exists('hub_inventory_live')
+    || !hub_table_column_exists('hub_inventory_live', 'customer_id')
+  ) {
+    return 0;
+  }
+
+  $params = [':customer_id' => $customerId];
+  $sourceAccessSql = hub_table_column_exists('hub_inventory_live', 'source_id')
+    ? hub_user_source_access_sql('source_id', $user, $params, 'inventory_source')
+    : '';
+
+  $stmt = $pdo->prepare(
+    'SELECT COUNT(*)
+     FROM hub_inventory_live
+     WHERE customer_id = :customer_id
+       AND archived = 0
+       AND show_on_web = 1
+       AND published = 1' . $sourceAccessSql
+  );
+  $stmt->execute($params);
+
+  return (int) $stmt->fetchColumn();
+}
+
+function hub_key_info_user_image_column(): ?string {
+  foreach (['image', 'image_url', 'profile_image', 'avatar_url'] as $column) {
+    if (hub_table_column_exists('hub_user', $column)) {
+      return $column;
+    }
+  }
+  return null;
+}
+
+function hub_key_info_initials(string $name): string {
+  $name = trim($name);
+  if ($name === '') {
+    return 'RX';
+  }
+  $parts = preg_split('/\s+/', $name) ?: [];
+  $first = strtoupper(substr((string) ($parts[0] ?? ''), 0, 1));
+  $last = strtoupper(substr((string) ($parts[count($parts) - 1] ?? ''), 0, 1));
+  return $first . ($last !== $first ? $last : '');
+}
+
+function hub_key_info_image_src(?string $imageValue): string {
+  $imageValue = trim((string) $imageValue);
+  if ($imageValue === '') {
+    return '/filestore/images/admin/md/default-user.svg';
+  }
+  if (preg_match('#^https?://#i', $imageValue) || str_starts_with($imageValue, '/')) {
+    return $imageValue;
+  }
+  return '/filestore/images/content/sm/' . ltrim($imageValue, '/');
+}
+
+function hub_key_info_phone_href(string $phone): string {
+  $phone = trim($phone);
+  $tel = preg_replace('/[^0-9+]/', '', $phone) ?: '';
+  return $tel !== '' ? 'tel:' . $tel : '#';
+}
+
+function hub_key_info_linkedin_href(string $linkedin): string {
+  $linkedin = trim($linkedin);
+  if ($linkedin === '') {
     return '';
   }
-  try {
-    $dt = new DateTime($value);
-    return $dt->format('Y-m-d');
-  } catch (Throwable $e) {
-    return $value;
+  if (preg_match('#^https?://#i', $linkedin)) {
+    return $linkedin;
   }
+  return 'https://' . ltrim($linkedin, '/');
 }
 
-$sampleRows = [];
-$statusCounts = [];
-$branchOptions = [];
-$statusOptions = [];
-$projectOptions = [];
-if ($customerCode && hub_table_exists('hub_sales_order') && $DB_OK && ($pdo instanceof PDO)) {
-  $params = [':code' => $customerCode];
-  $where = ['customer_code = :code'];
+function hub_key_info_contacts_for_customer(?int $customerId): array {
+  global $pdo, $DB_OK;
 
-  $orderNbr = trim((string) ($_GET['order_nbr'] ?? ''));
-  if ($orderNbr !== '') {
-    $where[] = 'order_nbr LIKE :order_nbr';
-    $params[':order_nbr'] = '%' . $orderNbr . '%';
+  if (
+    !$customerId
+    || !$DB_OK
+    || !($pdo instanceof PDO)
+    || !hub_table_exists('hub_key_info_role')
+    || !hub_table_exists('hub_customer_key_info_user')
+    || !hub_table_exists('hub_user')
+  ) {
+    return [];
   }
 
-  $branchId = trim((string) ($_GET['branch_id'] ?? ''));
-  if ($branchId !== '') {
-    $where[] = 'branch_id LIKE :branch_id';
-    $params[':branch_id'] = '%' . $branchId . '%';
+  $imageColumn = hub_key_info_user_image_column();
+  $imageSelect = $imageColumn ? ', u.`' . str_replace('`', '', $imageColumn) . '` AS image_value' : ', NULL AS image_value';
+  $stmt = $pdo->prepare(
+    'SELECT
+       r.role_key, r.label AS role_label, r.section_label, r.default_sort,
+       a.sort AS assignment_sort,
+       u.display_name, u.email, u.job_title, u.phone, u.linkedin, u.role AS user_role' . $imageSelect . '
+     FROM hub_customer_key_info_user a
+     INNER JOIN hub_key_info_role r ON r.id = a.role_id
+     INNER JOIN hub_user u ON u.id = a.user_id
+     WHERE a.customer_id = :customer_id
+       AND a.show_on_web = 1
+       AND a.archived = 0
+       AND r.show_on_web = 1
+       AND r.archived = 0
+       AND u.archived = 0
+     ORDER BY a.sort ASC, r.default_sort ASC, a.id ASC'
+  );
+  $stmt->execute([':customer_id' => $customerId]);
+
+  $contacts = [];
+  foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
+    if (hub_role_rank((string) ($row['user_role'] ?? 'user')) < hub_role_rank('admin')) {
+      continue;
+    }
+    $name = trim((string) ($row['display_name'] ?? ''));
+    if ($name === '') {
+      $name = trim((string) ($row['email'] ?? ''));
+    }
+    $contacts[] = [
+      'section_label' => (string) ($row['section_label'] ?? ''),
+      'role_label' => (string) ($row['role_label'] ?? ''),
+      'name' => $name,
+      'email' => trim((string) ($row['email'] ?? '')),
+      'job_title' => trim((string) ($row['job_title'] ?? '')),
+      'phone' => trim((string) ($row['phone'] ?? '')),
+      'linkedin' => trim((string) ($row['linkedin'] ?? '')),
+      'image' => hub_key_info_image_src($row['image_value'] ?? ''),
+      'initials' => hub_key_info_initials($name),
+    ];
   }
 
-  $status = trim((string) ($_GET['status'] ?? ''));
-  if ($status !== '') {
-    $where[] = 'status LIKE :status';
-    $params[':status'] = '%' . $status . '%';
-  }
-
-  $project = trim((string) ($_GET['project'] ?? ''));
-  if ($project !== '') {
-    $where[] = 'project LIKE :project';
-    $params[':project'] = '%' . $project . '%';
-  }
-
-  $owner = trim((string) ($_GET['owner'] ?? ''));
-  if ($owner !== '') {
-    $where[] = 'owner LIKE :owner';
-    $params[':owner'] = '%' . $owner . '%';
-  }
-
-  $sort = $_GET['sort'] ?? 'requested_on_desc';
-  $sortSql = 'requested_on DESC, order_nbr DESC';
-  if ($sort === 'requested_on_asc') {
-    $sortSql = 'requested_on ASC, order_nbr ASC';
-  } elseif ($sort === 'order_nbr_asc') {
-    $sortSql = 'order_nbr ASC';
-  } elseif ($sort === 'order_nbr_desc') {
-    $sortSql = 'order_nbr DESC';
-  } elseif ($sort === 'branch_id_asc') {
-    $sortSql = 'branch_id ASC, order_nbr DESC';
-  } elseif ($sort === 'branch_id_desc') {
-    $sortSql = 'branch_id DESC, order_nbr DESC';
-  } elseif ($sort === 'status_asc') {
-    $sortSql = 'status ASC, order_nbr DESC';
-  } elseif ($sort === 'status_desc') {
-    $sortSql = 'status DESC, order_nbr DESC';
-  } elseif ($sort === 'project_asc') {
-    $sortSql = 'project ASC, order_nbr DESC';
-  } elseif ($sort === 'project_desc') {
-    $sortSql = 'project DESC, order_nbr DESC';
-  } elseif ($sort === 'sched_shipment_asc') {
-    $sortSql = 'sched_shipment ASC, order_nbr DESC';
-  } elseif ($sort === 'sched_shipment_desc') {
-    $sortSql = 'sched_shipment DESC, order_nbr DESC';
-  } elseif ($sort === 'owner_asc') {
-    $sortSql = 'owner ASC, order_nbr DESC';
-  } elseif ($sort === 'owner_desc') {
-    $sortSql = 'owner DESC, order_nbr DESC';
-  }
-
-  $sql = 'SELECT order_nbr, branch_id, status, project, requested_on, sched_shipment, owner, description
-          FROM hub_sales_order
-          WHERE ' . implode(' AND ', $where) . '
-          ORDER BY ' . $sortSql . '
-          LIMIT 500';
-  $stmt = $pdo->prepare($sql);
-  $stmt->execute($params);
-  $sampleRows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-
-  $countSql = 'SELECT status, COUNT(*) AS cnt FROM hub_sales_order WHERE ' . implode(' AND ', $where) . ' GROUP BY status';
-  $stmtCount = $pdo->prepare($countSql);
-  $stmtCount->execute($params);
-  $statusCounts = $stmtCount->fetchAll(PDO::FETCH_ASSOC) ?: [];
-
-  // Distinct options for selects (unfiltered, per customer).
-  $stmtBranch = $pdo->prepare('SELECT DISTINCT branch_id FROM hub_sales_order WHERE customer_code = :code AND branch_id IS NOT NULL AND TRIM(branch_id) <> "" ORDER BY branch_id LIMIT 200');
-  $stmtBranch->execute([':code' => $customerCode]);
-  $branchOptions = $stmtBranch->fetchAll(PDO::FETCH_COLUMN) ?: [];
-
-  $stmtStatus = $pdo->prepare('SELECT DISTINCT status FROM hub_sales_order WHERE customer_code = :code AND status IS NOT NULL AND TRIM(status) <> "" ORDER BY status LIMIT 200');
-  $stmtStatus->execute([':code' => $customerCode]);
-  $statusOptions = $stmtStatus->fetchAll(PDO::FETCH_COLUMN) ?: [];
-
-  $stmtProject = $pdo->prepare('SELECT DISTINCT project FROM hub_sales_order WHERE customer_code = :code AND project IS NOT NULL AND TRIM(project) <> "" ORDER BY project LIMIT 200');
-  $stmtProject->execute([':code' => $customerCode]);
-  $projectOptions = $stmtProject->fetchAll(PDO::FETCH_COLUMN) ?: [];
+  return $contacts;
 }
 
-function hub_current_filters(): array {
-  return [
-    'order_nbr' => (string) ($_GET['order_nbr'] ?? ''),
-    'branch_id' => (string) ($_GET['branch_id'] ?? ''),
-    'status' => (string) ($_GET['status'] ?? ''),
-    'project' => (string) ($_GET['project'] ?? ''),
-    'owner' => (string) ($_GET['owner'] ?? ''),
-    'sort' => (string) ($_GET['sort'] ?? 'requested_on_desc'),
+function hub_key_info_group_contacts(array $contacts): array {
+  $groups = [];
+  foreach ($contacts as $contact) {
+    $section = trim((string) ($contact['section_label'] ?? ''));
+    if ($section === '') {
+      $section = 'Key Contact';
+    }
+    $groups[$section][] = $contact;
+  }
+  return $groups;
+}
+
+$activeAnnouncements = hub_active_announcements_for_user((int) ($user['id'] ?? 0));
+$dismissedAnnouncements = hub_dismissed_announcements_for_user((int) ($user['id'] ?? 0));
+$dashboardBanner = hub_dashboard_banner_active();
+$dashboardBannerImage = hub_dashboard_banner_image_src((string) ($dashboardBanner['image'] ?? ''), 'lg');
+if ($dashboardBannerImage === '') {
+  $dashboardBannerImage = '/filestore/images/content/lg/hubrxsbanner-3000-500.webp';
+}
+$dashboardBannerAlt = trim((string) ($dashboardBanner['alt_text'] ?? ''));
+if ($dashboardBannerAlt === '') {
+  $dashboardBannerAlt = 'RxSource Hub';
+}
+$portalCustomerLabel = $companyLabel ?: 'No customer selected';
+$portalShippingCount = hub_portal_shipping_count_for_customer_id($effectiveCustomerId ? (int) $effectiveCustomerId : null, $user);
+$portalInventoryCount = hub_portal_inventory_count_for_customer_id($effectiveCustomerId ? (int) $effectiveCustomerId : null, $user);
+$portalDashboardAudience = hub_dashboard_audience($user, $effectiveCustomerId ? (int) $effectiveCustomerId : null);
+$portalDashboardCounts = [
+  'shipping' => $portalShippingCount,
+  'inventory' => $portalInventoryCount,
+];
+$portalDashboardButtons = hub_dashboard_buttons_for_audience($portalDashboardAudience);
+$keyInfoContacts = hub_key_info_contacts_for_customer($effectiveCustomerId ? (int) $effectiveCustomerId : null);
+$keyInfoColumns = [];
+if (!empty($keyInfoContacts)) {
+  $keyInfoSplit = (int) ceil(count($keyInfoContacts) / 2);
+  $keyInfoColumns = [
+    array_slice($keyInfoContacts, 0, $keyInfoSplit),
+    array_slice($keyInfoContacts, $keyInfoSplit),
   ];
 }
-
-function hub_sort_link(string $column, string $label): string {
-  $filters = hub_current_filters();
-  $currentSort = $filters['sort'] ?? 'requested_on_desc';
-  $ascKey = $column . '_asc';
-  $descKey = $column . '_desc';
-  $next = ($currentSort === $ascKey) ? $descKey : $ascKey;
-  $filters['sort'] = $next;
-  $filters['report'] = 'sample1';
-  $qs = http_build_query($filters);
-  $arrow = '';
-  if ($currentSort === $ascKey) {
-    $arrow = ' ▲';
-  } elseif ($currentSort === $descKey) {
-    $arrow = ' ▼';
-  } else {
-    $arrow = ' ↕';
-  }
-  return '<a href="dashboard.php?' . hub_h($qs) . '#sample1">' . hub_h($label) . $arrow . '</a>';
+$adminActionCount = 0;
+if (hub_is_admin() && $DB_OK && ($pdo instanceof PDO) && hub_table_exists('hub_admin_action')) {
+  $stmtActions = $pdo->prepare(
+    'SELECT COUNT(*)
+     FROM hub_admin_action
+     WHERE status = :status
+       AND (assigned_user_id IS NULL OR assigned_user_id = :user_id)'
+  );
+  $stmtActions->execute([
+    ':status' => 'open',
+    ':user_id' => (int) ($user['id'] ?? 0),
+  ]);
+  $adminActionCount = (int) $stmtActions->fetchColumn();
 }
+
+$portalSectionIndex = 0;
+$portalSectionAttrs = function (string $name) use (&$portalSectionIndex): string {
+  $portalSectionIndex++;
+  return ' data-section-index="' . $portalSectionIndex . '" data-section-name="' . hub_h($name) . '"';
+};
+$portalIsDashboard = basename((string) ($_SERVER['SCRIPT_NAME'] ?? '')) === 'dashboard.php';
+$portalHeaderAction = $portalIsDashboard
+  ? [
+    'label' => 'Visit our website',
+    'href' => 'https://www.rxsource.com/',
+    'target' => '_blank',
+    'rel' => 'noopener',
+  ]
+  : [
+    'label' => 'Back to Dashboard',
+    'href' => '/dashboard.php',
+    'target' => '',
+    'rel' => '',
+  ];
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -198,264 +314,259 @@ function hub_sort_link(string $column, string $label): string {
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><?php echo hub_h(HUB_APP_NAME); ?> | Dashboard</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" referrerpolicy="no-referrer">
   <link rel="stylesheet" href="/css/hub.css">
 </head>
-<body>
-  <div class="stack">
-    <div class="wrap">
-      <div class="card">
-        <div class="flex">
-          <div>
-            <p class="brand"><?php echo hub_h(HUB_APP_NAME); ?></p>
-            <h1>
-              Welcome back<?php echo $user['display_name'] ? ', ' . hub_h($user['display_name']) : ''; ?>
-              <?php if ($companyLabel): ?>
-                <span class="muted">(<?php echo hub_h($companyLabel); ?>)</span>
-              <?php endif; ?>.
-            </h1>
-            <p class="muted">This dashboard will surface your JSON-derived metrics and custom reports.</p>
-          </div>
-          <div class="links">
-            <span class="badge"><?php echo hub_h($user['role'] ?? 'user'); ?></span>
-            <?php if (hub_is_admin()): ?>
-              <a href="/admin.php">Admin</a>
-              <a href="#" id="openCustomerModal">Change Customer</a>
-            <?php endif; ?>
-            <a href="logout.php">Logout</a>
-          </div>
-        </div>
-
-        <?php foreach ($messages as $msg): ?>
-          <div class="alert <?php echo hub_h($msg['type']); ?>"><?php echo hub_h($msg['message']); ?></div>
-        <?php endforeach; ?>
-
-        <div class="dashboard">
-          <div class="stat">
-            <strong>Customer</strong>
-            <p class="muted">ID: <?php echo hub_h((string) ($effectiveCustomerId ?? '')); ?></p>
-            <?php if (!empty($customerName)): ?>
-              <p class="muted">Name: <?php echo hub_h($customerName); ?></p>
-            <?php endif; ?>
-            <?php if (!empty($customerCode)): ?>
-              <p class="muted">Code: <?php echo hub_h($customerCode); ?></p>
-            <?php endif; ?>
-            <p class="muted">Email: <a href="mailto:<?php echo hub_h((string) ($user['email'] ?? '')); ?>"><?php echo hub_h((string) ($user['email'] ?? '')); ?></a></p>
-          </div>
-          <div class="stat">
-            <strong>JSON ingestion</strong>
-            <p class="muted">Processing stub pending schema spec.</p>
-          </div>
-          <div class="stat">
-            <strong>Reports</strong>
-            <p class="muted">Custom reporting surface will live here.</p>
-            <div class="links">
-              <a href="dashboard.php?report=sample1#sample1">Sample1</a>
-            </div>
-          </div>
-        </div>
-      </div>
+<body class="portal-page portal-dashboard-page">
+  <header class="portal-header portal-section"<?php echo $portalSectionAttrs('header'); ?>>
+    <a class="portal-logo" href="/dashboard.php" aria-label="RxSource Hub home">
+      <img class="portal-logo-image" src="<?php echo hub_h(hub_site_logo_url()); ?>" alt="RxSource Hub">
+    </a>
+    <div class="portal-welcome portal-welcome-dashboard">
+      <span>Welcome <?php echo hub_h($portalDisplayName ?: 'back'); ?></span>
+      <?php if ($companyLabel): ?>
+        <small><?php echo hub_h($companyLabel); ?></small>
+      <?php endif; ?>
     </div>
+    <div class="portal-header-actions">
+      <?php if (hub_role_at_least('manager')): ?>
+        <a class="portal-admin-link" href="/manager.php" title="Manager"><i class="<?php echo hub_h(hub_nav_icon_class('manager')); ?>" aria-hidden="true"></i><span>Manager</span></a>
+      <?php endif; ?>
+      <?php if (hub_role_at_least('admin')): ?>
+        <a class="portal-admin-link" href="/admin.php" title="Admin"><i class="<?php echo hub_h(hub_nav_icon_class('admin')); ?>" aria-hidden="true"></i><span>Admin</span></a>
+      <?php endif; ?>
+      <?php if (hub_role_at_least('super_admin')): ?>
+        <a class="portal-admin-link" href="/super.php" title="Super"><i class="<?php echo hub_h(hub_nav_icon_class('super')); ?>" aria-hidden="true"></i><span>Super</span></a>
+      <?php endif; ?>
+      <?php if (hub_is_developer()): ?>
+        <a class="portal-admin-link" href="/developer.php" title="Developer"><i class="<?php echo hub_h(hub_nav_icon_class('dev')); ?>" aria-hidden="true"></i><span>Dev</span></a>
+      <?php endif; ?>
+      <a class="portal-admin-link" href="/faq.php?page=dashboard" title="Help"><i class="<?php echo hub_h(hub_nav_icon_class('help')); ?>" aria-hidden="true"></i><span>Help</span></a>
+      <a class="portal-admin-link" href="/logout.php" title="Logout"><i class="<?php echo hub_h(hub_nav_icon_class('logout')); ?>" aria-hidden="true"></i><span>Logout</span></a>
+      <a class="portal-website-link" href="<?php echo hub_h($portalHeaderAction['href']); ?>" title="<?php echo hub_h($portalHeaderAction['label']); ?>"<?php echo $portalHeaderAction['target'] !== '' ? ' target="' . hub_h($portalHeaderAction['target']) . '"' : ''; ?><?php echo $portalHeaderAction['rel'] !== '' ? ' rel="' . hub_h($portalHeaderAction['rel']) . '"' : ''; ?>><?php echo hub_h($portalHeaderAction['label']); ?></a>
+    </div>
+  </header>
 
-    <?php if ($showReport && !empty($statusCounts)): ?>
-      <div class="card">
-        <p class="brand">At a glance</p>
-        <div class="stat-pills">
-          <?php
-            $palette = ['#1f9acb', '#0ec27a', '#ff8c00', '#a855f7', '#ef4444', '#14b8a6', '#f97316', '#6366f1'];
-            foreach ($statusCounts as $idx => $st):
-              $color = $palette[$idx % count($palette)];
-              $label = trim((string) ($st['status'] ?? 'Unknown'));
-              $countVal = (int) ($st['cnt'] ?? 0);
-          ?>
-            <div class="stat-pill" style="background: <?php echo hub_h($color); ?>;">
-              <div class="label"><?php echo hub_h($label === '' ? 'Unknown' : $label); ?></div>
-              <div class="value"><?php echo hub_h((string) $countVal); ?></div>
-            </div>
-          <?php endforeach; ?>
-        </div>
-      </div>
-    <?php endif; ?>
+  <section class="portal-hero portal-section" aria-label="RxSource Hub banner"<?php echo $portalSectionAttrs('hero'); ?>>
+    <img src="<?php echo hub_h($dashboardBannerImage); ?>" alt="<?php echo hub_h($dashboardBannerAlt); ?>" title="<?php echo hub_h($dashboardBannerAlt); ?>">
+  </section>
 
-    <?php if ($showReport): ?>
-      <div class="card" id="sample1">
-        <p class="brand">Reports</p>
-        <h1>Sample1 (Sales Orders)</h1>
-        <p class="muted">Showing sales orders for customer code <?php echo hub_h($customerCode ?? 'N/A'); ?>.</p>
-
-        <?php if (!$customerCode): ?>
-          <div class="alert info">No customer code linked to your user yet.</div>
-        <?php else: ?>
-          <?php $filters = hub_current_filters(); ?>
-          <form id="reportFilters" method="get" action="dashboard.php#sample1">
-            <input type="hidden" name="report" value="sample1">
-            <input type="hidden" name="sort" value="<?php echo hub_h($filters['sort']); ?>">
-            <table class="table">
-            <thead>
-              <tr>
-                <th><?php echo hub_sort_link('order_nbr', 'Order'); ?></th>
-                <th><?php echo hub_sort_link('branch_id', 'Branch'); ?></th>
-                <th><?php echo hub_sort_link('status', 'Status'); ?></th>
-                <th><?php echo hub_sort_link('project', 'Project'); ?></th>
-                <th><?php echo hub_sort_link('requested_on', 'Requested'); ?></th>
-                <th><?php echo hub_sort_link('sched_shipment', 'Sched Ship'); ?></th>
-                <th><?php echo hub_sort_link('owner', 'Owner'); ?></th>
-              </tr>
-              <tr>
-                <th><input name="order_nbr" type="text" value="<?php echo hub_h($filters['order_nbr']); ?>" placeholder="Filter order"></th>
-                <th>
-                  <select name="branch_id">
-                    <option value="">All branches</option>
-                    <?php foreach ($branchOptions as $opt): ?>
-                      <?php $sel = ($filters['branch_id'] === (string) $opt) ? 'selected' : ''; ?>
-                      <option value="<?php echo hub_h((string) $opt); ?>" <?php echo $sel; ?>><?php echo hub_h((string) $opt); ?></option>
-                    <?php endforeach; ?>
-                  </select>
-                </th>
-                <th>
-                  <select name="status">
-                    <option value="">All status</option>
-                    <?php foreach ($statusOptions as $opt): ?>
-                      <?php $sel = ($filters['status'] === (string) $opt) ? 'selected' : ''; ?>
-                      <option value="<?php echo hub_h((string) $opt); ?>" <?php echo $sel; ?>><?php echo hub_h((string) $opt); ?></option>
-                    <?php endforeach; ?>
-                  </select>
-                </th>
-                <th>
-                  <select name="project">
-                    <option value="">All projects</option>
-                    <?php foreach ($projectOptions as $opt): ?>
-                      <?php $sel = ($filters['project'] === (string) $opt) ? 'selected' : ''; ?>
-                      <option value="<?php echo hub_h((string) $opt); ?>" <?php echo $sel; ?>><?php echo hub_h((string) $opt); ?></option>
-                    <?php endforeach; ?>
-                  </select>
-                </th>
-                <th><input name="requested_on" type="text" disabled placeholder="via sort"></th>
-                <th><input name="sched_shipment" type="text" disabled placeholder="via sort"></th>
-                <th><input name="owner" type="text" value="<?php echo hub_h($filters['owner']); ?>" placeholder="Filter owner"></th>
-              </tr>
-            </thead>
-            <tbody>
-              <?php if (empty($sampleRows)): ?>
-                <tr>
-                  <td colspan="7" class="muted">No sales orders found for this filter.</td>
-                </tr>
-              <?php else: ?>
-                <?php foreach ($sampleRows as $row): ?>
-                  <tr>
-                    <td><?php echo hub_h((string) $row['order_nbr']); ?></td>
-                    <td><?php echo hub_h((string) $row['branch_id']); ?></td>
-                    <td><?php echo hub_h((string) $row['status']); ?></td>
-                    <td><?php echo hub_h((string) $row['project']); ?></td>
-                    <td><?php echo hub_h(hub_fmt_date($row['requested_on'])); ?></td>
-                    <td><?php echo hub_h(hub_fmt_date($row['sched_shipment'])); ?></td>
-                    <td><?php echo hub_h((string) $row['owner']); ?></td>
-                  </tr>
-                  <tr>
-                    <td></td>
-                    <td colspan="6" class="muted"><?php echo hub_h((string) $row['description']); ?></td>
-                  </tr>
-                <?php endforeach; ?>
+  <?php if (!empty($activeAnnouncements) || !empty($dismissedAnnouncements)): ?>
+    <section class="portal-announcements portal-section" aria-label="Key announcements"<?php echo $portalSectionAttrs('announcements'); ?>>
+      <?php foreach ($activeAnnouncements as $announcement): ?>
+        <?php
+          $announcementImageUrl = hub_announcement_image_src((string) ($announcement['image_url'] ?? ''), 'sm');
+          $announcementHeading = trim((string) ($announcement['heading'] ?? ''));
+          $announcementSubheading = trim((string) ($announcement['subheading'] ?? ''));
+          $announcementImageAlt = trim($announcementHeading . ($announcementSubheading !== '' ? ' - ' . $announcementSubheading : ''));
+          $announcementImageTitle = $announcementHeading;
+          $announcementLinkUrl = trim((string) ($announcement['link_url'] ?? ''));
+          $announcementLinkLabel = trim((string) ($announcement['link_label'] ?? ''));
+        ?>
+        <article class="portal-announcement <?php echo $announcementImageUrl === '' ? 'portal-announcement-no-image' : ''; ?>">
+          <?php if ($announcementImageUrl !== ''): ?>
+            <img class="portal-announcement-image" src="<?php echo hub_h($announcementImageUrl); ?>" alt="<?php echo hub_h($announcementImageAlt); ?>" title="<?php echo hub_h($announcementImageTitle); ?>">
+          <?php endif; ?>
+          <div class="portal-announcement-copy">
+            <h2><?php echo hub_h((string) $announcement['heading']); ?></h2>
+            <?php if (!empty($announcement['subheading'])): ?>
+              <p class="portal-announcement-subheading"><?php echo hub_h((string) $announcement['subheading']); ?></p>
+            <?php endif; ?>
+            <?php if (!empty($announcement['body_html'])): ?>
+              <div class="portal-announcement-body"><?php echo hub_announcement_render_html((string) $announcement['body_html']); ?></div>
+            <?php endif; ?>
+            <div class="portal-announcement-actions">
+              <?php if ($announcementLinkUrl !== '' && $announcementLinkLabel !== ''): ?>
+                <a class="portal-announcement-link" href="<?php echo hub_h($announcementLinkUrl); ?>">
+                  <?php echo hub_h($announcementLinkLabel); ?>
+                </a>
               <?php endif; ?>
-            </tbody>
-            </table>
-          </form>
-        <?php endif; ?>
-      </div>
-    <?php endif; ?>
-  </div>
-
-  <?php if (hub_is_admin()): ?>
-    <div class="modal" id="customerModal">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h2>Select customer</h2>
-          <button class="close-btn" id="closeCustomerModal" aria-label="Close">&times;</button>
-        </div>
-        <?php if ($customerSelectError): ?>
-          <div class="alert error"><?php echo hub_h($customerSelectError); ?></div>
-        <?php endif; ?>
-        <form method="post" action="dashboard.php">
-          <input type="hidden" name="csrf" value="<?php echo hub_h(hub_csrf_token()); ?>">
-          <input type="hidden" name="action" value="select_customer">
-          <div style="display:grid; gap:10px;">
-            <label for="customer_id_modal">View as customer:</label>
-            <select id="customer_id_modal" name="customer_id" style="padding: 10px; border-radius: 8px;">
-              <option value="">-- Use my own --</option>
-              <?php
-              if ($DB_OK && ($pdo instanceof PDO) && hub_table_exists('hub_customer')) {
-                $stmtList = $pdo->query('SELECT id, name, code FROM hub_customer WHERE archived = 0 ORDER BY name ASC LIMIT 200');
-                $options = $stmtList ? $stmtList->fetchAll(PDO::FETCH_ASSOC) : [];
-                foreach ($options as $opt) {
-                  $idVal = (int) $opt['id'];
-                  $selected = ($effectiveCustomerId === $idVal) ? 'selected' : '';
-                  $label = trim((string) $opt['name']) !== '' ? $opt['name'] : $opt['code'];
-                  echo '<option value="' . hub_h((string) $idVal) . "\" {$selected}>" . hub_h($label . ' (' . $opt['code'] . ')') . '</option>';
-                }
-              }
-              ?>
-            </select>
-            <div class="links" style="justify-content: flex-end;">
-              <button type="submit">Apply</button>
+              <form method="post" action="dashboard.php">
+                <input type="hidden" name="csrf" value="<?php echo hub_h(hub_csrf_token()); ?>">
+                <input type="hidden" name="action" value="dismiss_announcement">
+                <input type="hidden" name="announcement_id" value="<?php echo (int) $announcement['id']; ?>">
+                <button type="submit" class="portal-announcement-dismiss">Dismiss</button>
+              </form>
             </div>
           </div>
-        </form>
+        </article>
+      <?php endforeach; ?>
+      <?php foreach ($dismissedAnnouncements as $announcement): ?>
+        <?php
+          $announcementLinkUrl = trim((string) ($announcement['link_url'] ?? ''));
+          $announcementLinkLabel = trim((string) ($announcement['link_label'] ?? ''));
+        ?>
+        <article class="portal-announcement-bar">
+          <h2><?php echo hub_h((string) $announcement['heading']); ?></h2>
+          <div class="portal-announcement-bar-actions">
+            <?php if ($announcementLinkUrl !== '' && $announcementLinkLabel !== ''): ?>
+              <a class="portal-announcement-more" href="<?php echo hub_h($announcementLinkUrl); ?>">
+                <?php echo hub_h($announcementLinkLabel); ?>
+              </a>
+            <?php endif; ?>
+            <form method="post" action="dashboard.php">
+              <input type="hidden" name="csrf" value="<?php echo hub_h(hub_csrf_token()); ?>">
+              <input type="hidden" name="action" value="reveal_announcement">
+              <input type="hidden" name="announcement_id" value="<?php echo (int) $announcement['id']; ?>">
+              <button type="submit" class="portal-announcement-reveal">Reveal</button>
+            </form>
+          </div>
+        </article>
+      <?php endforeach; ?>
+    </section>
+  <?php endif; ?>
+
+  <?php if ($adminActionCount > 0): ?>
+    <section class="portal-user-actions portal-actions-complete portal-section" aria-label="Action reminders"<?php echo $portalSectionAttrs('admin-actions'); ?>>
+      <div class="portal-user-action-bar">
+        <h2>You have Actions to Complete</h2>
+        <a class="portal-user-action-link" href="/admin.php#admin-actions">View Actions</a>
+      </div>
+    </section>
+  <?php endif; ?>
+
+  <?php /* include __DIR__ . '/includes/app/dashboard-proposals-glance-legacy.php'; */ ?>
+  <?php include __DIR__ . '/includes/app/dashboard-intro-content.php'; ?>
+
+  <section class="portal-dashboard-nav portal-section" aria-label="Dashboard shortcuts"<?php echo $portalSectionAttrs('dashboard-shortcuts'); ?>>
+    <div class="portal-dashboard-nav-inner">
+      <h2>Your Dashboard</h2>
+      <div class="portal-dashboard-tiles">
+        <?php foreach ($portalDashboardButtons as $dashboardButton): ?>
+          <?php
+            $buttonTitle = trim((string) ($dashboardButton['title'] ?? ''));
+            $buttonHref = trim((string) ($dashboardButton['href'] ?? 'dashboard.php'));
+            $buttonClass = trim((string) ($dashboardButton['css_class'] ?? ''));
+            $buttonImage = trim((string) ($dashboardButton['image_url'] ?? ''));
+            $buttonCount = hub_dashboard_button_count($dashboardButton, $portalDashboardCounts);
+            $buttonStyle = $buttonImage !== ''
+              ? ' style="background-image: linear-gradient(rgba(38, 51, 59, 0.10), rgba(38, 51, 59, 0.40)), url(\'' . hub_h(hub_public_asset_url($buttonImage)) . '\');"'
+              : '';
+          ?>
+          <a class="portal-dashboard-tile <?php echo hub_h($buttonClass); ?>" href="<?php echo hub_h($buttonHref !== '' ? $buttonHref : 'dashboard.php'); ?>" title="<?php echo hub_h($buttonTitle); ?>"<?php echo $buttonStyle; ?>>
+            <?php if ($buttonCount !== null): ?>
+              <strong class="portal-dashboard-tile-count"><?php echo number_format($buttonCount); ?></strong>
+            <?php endif; ?>
+            <span><?php echo hub_h($buttonTitle); ?></span>
+          </a>
+        <?php endforeach; ?>
       </div>
     </div>
-    <script>
-      (function() {
-        const modal = document.getElementById('customerModal');
-        const openBtn = document.getElementById('openCustomerModal');
-        const closeBtn = document.getElementById('closeCustomerModal');
+  </section>
 
-        function openModal(e) {
-          if (e) e.preventDefault();
-          if (modal) modal.classList.add('open');
-        }
+  <section class="portal-team portal-key-information portal-section" aria-label="Your Rx contacts"<?php echo $portalSectionAttrs('contacts'); ?>>
+    <div class="portal-team-inner">
+      <h2 class="portal-team-heading">Key Information</h2>
+      <?php if (empty($keyInfoContacts)): ?>
+        <p class="portal-team-empty">Key Information still to be added</p>
+      <?php else: ?>
+        <?php foreach ($keyInfoColumns as $columnContacts): ?>
+          <?php if (empty($columnContacts)) continue; ?>
+          <div class="portal-team-column">
+            <?php foreach ($columnContacts as $contact): ?>
+              <article class="portal-team-member">
+                <div class="portal-team-avatar">
+                  <img src="<?php echo hub_h((string) $contact['image']); ?>" alt="">
+                </div>
+                <div class="portal-team-copy">
+                  <?php if (!empty($contact['role_label'])): ?>
+                    <p class="portal-team-role"><?php echo hub_h((string) $contact['role_label']); ?></p>
+                  <?php endif; ?>
+                  <h3>
+                    <?php echo hub_h((string) $contact['name']); ?>
+                    <?php if (!empty($contact['job_title'])): ?>
+                      <em><?php echo hub_h((string) $contact['job_title']); ?></em>
+                    <?php endif; ?>
+                  </h3>
+                  <?php if (!empty($contact['email'])): ?>
+                    <p><span class="portal-team-icon" aria-hidden="true"><i class="fa-regular fa-envelope"></i></span><a class="portal-team-contact-link" href="mailto:<?php echo hub_h((string) $contact['email']); ?>"><?php echo hub_h((string) $contact['email']); ?></a></p>
+                  <?php endif; ?>
+                  <?php if (!empty($contact['phone'])): ?>
+                    <p><span class="portal-team-icon" aria-hidden="true"><i class="fa-solid fa-phone"></i></span><a class="portal-team-contact-link" href="<?php echo hub_h(hub_key_info_phone_href((string) $contact['phone'])); ?>"><?php echo hub_h((string) $contact['phone']); ?></a></p>
+                  <?php endif; ?>
+                  <?php $linkedinHref = hub_key_info_linkedin_href((string) ($contact['linkedin'] ?? '')); ?>
+                  <?php if ($linkedinHref !== ''): ?>
+                    <p><span class="portal-team-icon" aria-hidden="true"><i class="fa-brands fa-linkedin-in"></i></span><a class="portal-team-contact-link" href="<?php echo hub_h($linkedinHref); ?>" target="_blank" rel="noopener">LinkedIn profile</a></p>
+                  <?php endif; ?>
+                </div>
+              </article>
+            <?php endforeach; ?>
+          </div>
+        <?php endforeach; ?>
+      <?php endif; ?>
+    </div>
+  </section>
 
-        function closeModal(e) {
-          if (e) e.preventDefault();
-          if (modal) modal.classList.remove('open');
-        }
+  <section class="portal-news portal-section" aria-label="RxSource LinkedIn news feed"<?php echo $portalSectionAttrs('linkedin-feed'); ?>>
+    <div class="portal-news-inner">
+      <h2>RxSource News Feed</h2>
+      <div class="portal-news-grid">
+        <?php for ($feedItem = 1; $feedItem <= 4; $feedItem++): ?>
+          <a class="portal-news-card" href="https://www.linkedin.com/company/rxsource">
+            <div class="portal-news-card-header">
+              <span class="portal-news-dot"></span>
+              <strong>RxSource</strong>
+            </div>
+            <div class="portal-news-card-body">
+              <span>LinkedIn post preview</span>
+            </div>
+            <div class="portal-news-card-footer">View on LinkedIn</div>
+          </a>
+        <?php endfor; ?>
+      </div>
+    </div>
+  </section>
 
-        if (openBtn) openBtn.addEventListener('click', openModal);
-        if (closeBtn) closeBtn.addEventListener('click', closeModal);
-        if (modal) {
-          modal.addEventListener('click', function(e) {
-            if (e.target === modal) {
-              closeModal(e);
-            }
-          });
-        }
-      })();
-    </script>
-  <?php endif; ?>
-  <script>
-    (function() {
-      const form = document.getElementById('reportFilters');
-      if (!form) return;
-      const inputs = form.querySelectorAll('input[name], select[name]');
-      let timer = null;
-      function submitNow() {
-        form.submit();
-      }
-      function debounceSubmit() {
-        if (timer) clearTimeout(timer);
-        timer = setTimeout(submitNow, 300);
-      }
-      inputs.forEach((el) => {
-        if (el.tagName.toLowerCase() === 'select') {
-          el.addEventListener('change', submitNow);
-        } else {
-          el.addEventListener('input', debounceSubmit);
-          el.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              submitNow();
-            }
-          });
-        }
-      });
-    })();
-  </script>
+  <footer class="portal-footer portal-section"<?php echo $portalSectionAttrs('footer'); ?>>
+    <div class="portal-footer-inner">
+      <div class="portal-footer-addresses">
+        <div>
+          <strong>CANADA</strong>
+          <p>74-556 Edward Ave<br>Richmond Hill<br>Canada<br>L4C 9Y5</p>
+          <p>+1 905 883 4333</p>
+        </div>
+        <div>
+          <strong>USA</strong>
+          <p>Unit 300<br>1240 Forest Parkway<br>West Deptford<br>New Jersey<br>USA<br>08066</p>
+          <p>+1 905 883 4333</p>
+        </div>
+        <div>
+          <strong>EUROPE</strong>
+          <p>Unit 506<br>Northwest Business Park, Ballycoolin<br>Dublin 15<br>Ireland</p>
+          <p>+353 (1) 963-1100</p>
+        </div>
+      </div>
+      <div class="portal-footer-contact">
+        <div class="portal-socials" aria-label="RxSource social links">
+          <a href="https://www.linkedin.com/company/rxsource" aria-label="LinkedIn"><i class="fa-brands fa-linkedin-in"></i></a>
+          <a href="https://twitter.com/rxsource" aria-label="X / Twitter"><i class="fa-brands fa-x-twitter"></i></a>
+          <a href="https://www.instagram.com/rxsource" aria-label="Instagram"><i class="fa-brands fa-instagram"></i></a>
+          <a href="https://www.youtube.com/@RxSource" aria-label="YouTube"><i class="fa-brands fa-youtube"></i></a>
+        </div>
+        <a href="mailto:solutions@rxsource.com">solutions@rxsource.com</a>
+        <div class="portal-user-tools" aria-label="Account tools">
+          <a class="portal-account-tool" href="/account.php" aria-label="Manage account">
+            <?php if ($portalAccountImage !== ''): ?>
+              <img src="<?php echo hub_h($portalAccountImage); ?>" alt="">
+            <?php else: ?>
+              <i class="fa-solid fa-user" aria-hidden="true"></i>
+            <?php endif; ?>
+            <span>Account</span>
+          </a>
+        </div>
+      </div>
+    </div>
+    <div class="portal-footer-legal">
+      <div class="portal-footer-legal-inner">
+        <p>&copy; <?php echo date('Y'); ?> RxSource. All rights reserved.</p>
+        <nav aria-label="Legal policies">
+          <a href="/privacy-policy.php">Privacy Policy</a>
+          <a href="/cookie-policy.php">Cookie Policy</a>
+          <a href="/terms.php">Terms of Use</a>
+          <a href="/accessibility.php">Accessibility</a>
+        </nav>
+      </div>
+    </div>
+  </footer>
 </body>
 </html>

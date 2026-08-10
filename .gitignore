@@ -4,6 +4,12 @@ error/
 cache/
 tmp/
 wccms/
+sourcedata/
+filestore/
+
+# Local workspace/reference files
+AGENTS.md
+RxSource Hub Design.pdf
 
 # Exclude dependency directories installed on the server
 vendor/
