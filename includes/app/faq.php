@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/help.php';
+require_once __DIR__ . '/content.php';
 
 function hub_faq_role_options(): array {
   $roles = hub_user_role_options(true);

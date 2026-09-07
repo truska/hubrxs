@@ -7,7 +7,9 @@ if ($isCli && session_status() === PHP_SESSION_NONE) {
 require_once __DIR__ . '/../includes/app/auth.php';
 
 if (!$isCli) {
-  hub_require_admin();
+  http_response_code(403);
+  echo 'CLI only.';
+  exit;
 }
 
 if (!$DB_OK || !($pdo instanceof PDO)) {

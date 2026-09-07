@@ -140,7 +140,7 @@ if ($effectiveCustomerId && $DB_OK && ($pdo instanceof PDO) && hub_table_exists(
                   </button>
                 </h2>
                 <div id="<?php echo hub_h($panelId); ?>" class="faq-answer" role="region" aria-labelledby="<?php echo hub_h($buttonId); ?>" hidden>
-                  <div class="help-message"><?php echo (string) $faq['answer_html']; ?></div>
+                  <div class="help-message"><?php echo hub_content_sanitize_html((string) $faq['answer_html']); ?></div>
                 </div>
               </section>
             <?php endforeach; ?>

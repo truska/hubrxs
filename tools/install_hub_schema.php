@@ -2,9 +2,9 @@
 require_once __DIR__ . '/../includes/app/bootstrap.php';
 
 $isCli = (php_sapi_name() === 'cli');
-if (!$isCli && ($_GET['run'] ?? '') !== '1') {
+if (!$isCli) {
   http_response_code(403);
-  echo "Add ?run=1 to execute.";
+  echo "CLI only.";
   exit;
 }
 

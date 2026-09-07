@@ -141,7 +141,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && in_array
     $section = hub_valid_user_role_key(trim((string) ($_POST['section'] ?? 'user')));
     $pageKey = hub_faq_normalise_page_key((string) ($_POST['page_key'] ?? ''));
     $question = trim((string) ($_POST['question'] ?? ''));
-    $answerHtml = trim((string) ($_POST['answer_html'] ?? ''));
+    $answerHtml = hub_content_sanitize_html((string) ($_POST['answer_html'] ?? ''));
     $sortValue = (int) ($_POST['sort'] ?? 100);
     $showOnWeb = !empty($_POST['show_on_web']) ? 1 : 0;
     $archived = !empty($_POST['archived']) ? 1 : 0;

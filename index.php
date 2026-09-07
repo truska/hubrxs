@@ -56,10 +56,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         } elseif ($action === 'email_link') {
           $result = hub_request_magic_link($verifiedEmail);
           $mailSent = (bool) ($result['sent'] ?? false);
-          hub_flash('success', 'If the email can receive Hub mail, a login link has been sent.');
-          if (!$mailSent && !empty($result['link'])) {
-            hub_flash('info', 'Email send appears unavailable; temporary debug login URL: ' . (string) $result['link']);
-          }
+          hub_flash($mailSent ? 'success' : 'error', $mailSent
+            ? 'If the email can receive Hub mail, a login link has been sent.'
+            : 'We could not deliver the login email. Please try again later or contact an administrator.');
           hub_redirect('login-email-sent.php');
         }
       }

@@ -901,7 +901,7 @@ function hub_complete_totp_twofa(string $code, string &$error = null): bool {
 function hub_request_magic_link(string $email): array {
   global $pdo, $DB_OK;
 
-  $default = ["token" => null, "link" => null, "sent" => false];
+  $default = ["sent" => false];
   if (!$DB_OK || !($pdo instanceof PDO) || !hub_table_exists("hub_magic_link")) {
     return $default;
   }
@@ -953,11 +953,7 @@ function hub_request_magic_link(string $email): array {
     'details' => ['method' => 'Email Link', 'sent' => $sent],
   ]);
 
-  return [
-    "token" => $token,
-    "link" => $link,
-    "sent" => $sent,
-  ];
+  return ["sent" => $sent];
 }
 
 /**
@@ -1317,7 +1313,7 @@ function hub_create_user(array $data, string &$error = null): ?int {
 function hub_request_password_reset(string $email): array {
   global $pdo, $DB_OK;
 
-  $default = ['token' => null, 'link' => null, 'sent' => false];
+  $default = ['sent' => false];
 
   if (!$DB_OK || !($pdo instanceof PDO)) {
     return $default;
@@ -1374,11 +1370,7 @@ function hub_request_password_reset(string $email): array {
     'details' => ['sent' => $sent],
   ]);
 
-  return [
-    'token' => $token,
-    'link' => $link,
-    'sent' => $sent,
-  ];
+  return ['sent' => $sent];
 }
 
 function hub_reset_password(string $token, string $newPassword, string &$error = null): bool {

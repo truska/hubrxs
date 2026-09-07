@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/content.php';
 
 function hub_help_message_by_name(string $name): ?array {
   global $pdo, $DB_OK;
@@ -42,7 +43,7 @@ function hub_help_button(string $name, string $label = 'Help'): string {
     hub_h($heading),
     hub_h($context),
     hub_h($iconClass),
-    hub_h((string) $message['message_html']),
+    hub_h(hub_content_sanitize_html((string) $message['message_html'])),
     hub_h($iconClass)
   );
 }

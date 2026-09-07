@@ -19,7 +19,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $heading = trim((string) ($_POST['heading'] ?? ''));
     $context = hub_help_admin_choice((string) ($_POST['context'] ?? 'info'), ['primary', 'secondary', 'success', 'danger', 'warning', 'info', 'light', 'dark'], 'info');
     $icon = hub_help_icon_for_context($context);
-    $messageHtml = trim((string) ($_POST['message_html'] ?? ''));
+    $messageHtml = hub_content_sanitize_html((string) ($_POST['message_html'] ?? ''));
     $showOnWeb = !empty($_POST['show_on_web']) ? 1 : 0;
     $archived = !empty($_POST['archived']) ? 1 : 0;
 

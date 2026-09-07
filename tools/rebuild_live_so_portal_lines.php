@@ -7,7 +7,9 @@ if ($isCli && session_status() === PHP_SESSION_NONE) {
 require_once __DIR__ . '/../includes/app/imports/remote_sources.php';
 
 if (!$isCli) {
-  hub_require_admin();
+  http_response_code(403);
+  echo 'CLI only.';
+  exit;
 }
 
 if (!$DB_OK || !($pdo instanceof PDO)) {
@@ -33,7 +35,7 @@ if (!hub_table_exists('hub_import_source') || !hub_table_exists('hub_so_raw') ||
 }
 
 if (!hub_table_exists('hub_so_live') || !hub_table_exists('hub_customer_mapping')) {
-  $msg = 'Live schema is not ready. Run /tools/install_hub_schema.php?run=1 first.';
+  $msg = 'Live schema is not ready. Run php tools/install_hub_schema.php from the command line first.';
   if ($isCli) {
     fwrite(STDERR, $msg . PHP_EOL);
     exit(1);

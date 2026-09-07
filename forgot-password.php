@@ -7,6 +7,7 @@ if (hub_is_logged_in()) {
 
 $error = null;
 $sent = false;
+$messages = hub_flash_messages();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if (!hub_verify_csrf($_POST['csrf'] ?? '')) {
@@ -15,15 +16,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = (string) ($_POST['email'] ?? '');
     $result = hub_request_password_reset($email);
     $sent = true; // always show success to avoid leaking accounts
-    $debugLink = $result['link'] ?? null;
     $mailSent = (bool) ($result['sent'] ?? false);
     if (!$mailSent) {
-      $messages[] = ['type' => 'info', 'message' => 'Email send appears unavailable; use the debug reset link below.'];
+      $messages[] = ['type' => 'error', 'message' => 'We could not deliver the reset email. Please try again later or contact an administrator.'];
     }
   }
 }
 
-$messages = hub_flash_messages();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -53,9 +52,6 @@ $messages = hub_flash_messages();
       <?php endif; ?>
       <?php if ($sent): ?>
         <div class="alert success">If the email exists, a reset link has been sent.</div>
-        <?php if (!empty($debugLink)): ?>
-          <div class="alert info">Temporary debug reset URL (no email): <a href="<?php echo hub_h($debugLink); ?>"><?php echo hub_h($debugLink); ?></a></div>
-        <?php endif; ?>
       <?php endif; ?>
 
       <form method="post" action="forgot-password.php">
