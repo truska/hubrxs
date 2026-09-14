@@ -335,8 +335,15 @@ function hub_import_upsert_source(array $input): int {
   if ($name === '' || $url === '') {
     throw new InvalidArgumentException('Import source name and URL are required.');
   }
+  if (filter_var($url, FILTER_VALIDATE_URL) === false || !in_array(strtolower((string) parse_url($url, PHP_URL_SCHEME)), ['http', 'https'], true)) {
+    throw new InvalidArgumentException('Import source URL must be a valid HTTP or HTTPS URL.');
+  }
+  if (!in_array($authType, ['none', 'basic'], true)) {
+    throw new InvalidArgumentException('Import authentication type is not supported.');
+  }
 
   $password = (string) ($input['auth_password'] ?? '');
+  $clearPassword = !empty($input['clear_auth_password']);
   $encrypted = $password !== '' ? hub_import_encrypt_password($password) : null;
   $existing = hub_import_source_by_key($importKey);
   if ($existing) {
@@ -355,6 +362,9 @@ function hub_import_upsert_source(array $input): int {
       $sets[] = 'auth_password_nonce = :auth_password_nonce';
       $params[':auth_password_ciphertext'] = $encrypted['ciphertext'];
       $params[':auth_password_nonce'] = $encrypted['nonce'];
+    } elseif ($clearPassword) {
+      $sets[] = 'auth_password_ciphertext = NULL';
+      $sets[] = 'auth_password_nonce = NULL';
     }
     $stmt = $pdo->prepare('UPDATE hub_import_source SET ' . implode(', ', $sets) . ' WHERE id = :id');
     $stmt->execute($params);

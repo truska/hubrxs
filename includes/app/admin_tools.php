@@ -157,6 +157,15 @@ function hub_admin_tools_registry(): array {
       'sort' => 100,
     ],
     [
+      'key' => 'manage_json_source_credentials',
+      'title' => 'Sources',
+      'href' => '/admin/json-source-management.php',
+      'group' => 'imports',
+      'minimum_role' => 'developer',
+      'lane' => 'internal',
+      'sort' => 110,
+    ],
+    [
       'key' => 'view_import_data',
       'title' => 'View',
       'href' => '/admin/import-data.php',
