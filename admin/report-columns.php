@@ -260,7 +260,7 @@ foreach ($columns as $configuredColumn) {
                     <td><?php echo !empty($column['show_on_web']) ? 'Yes' : 'No'; ?></td>
                     <td class="table-actions">
                       <button type="button" class="icon-action" data-open-modal="<?php echo hub_h($modalId); ?>" title="Edit column" aria-label="Edit column"><i class="fa-solid fa-pencil" aria-hidden="true"></i></button>
-                      <?php if (!empty($column['at_a_glance'])): ?>
+                      <?php if (!empty($column['at_a_glance']) && hub_is_developer()): ?>
                         <a class="icon-action" href="/admin/report-colours.php?<?php echo hub_h(http_build_query(['report' => $column['report_key'], 'column' => $column['column_key']])); ?>" title="Manage At a Glance colours" aria-label="Manage At a Glance colours"><i class="fa-solid fa-palette" aria-hidden="true"></i></a>
                       <?php endif; ?>
                     </td>

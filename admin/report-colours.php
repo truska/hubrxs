@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/../includes/app/admin_layout.php';
 require_once __DIR__ . '/../includes/app/report_columns.php';
-hub_require_super_admin();
+hub_require_developer();
 
 global $pdo, $DB_OK;
 
