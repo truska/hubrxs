@@ -262,7 +262,12 @@ $portalDashboardCounts = [
   'shipping' => $portalShippingCount,
   'inventory' => $portalInventoryCount,
 ];
-$portalDashboardButtons = hub_dashboard_buttons_for_audience($portalDashboardAudience);
+// Temporary: client users/managers, plus internal users viewing an overridden
+// customer, see only the two currently-ready reports.
+$portalUseTemporaryReportButtons = !hub_role_at_least('admin', $user) || hub_current_customer_override() !== null;
+$portalDashboardButtons = $portalUseTemporaryReportButtons
+  ? hub_dashboard_temporary_user_manager_buttons()
+  : hub_dashboard_buttons_for_audience($portalDashboardAudience);
 $keyInfoContacts = hub_key_info_contacts_for_customer($effectiveCustomerId ? (int) $effectiveCustomerId : null);
 $keyInfoColumns = [];
 if (!empty($keyInfoContacts)) {

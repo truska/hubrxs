@@ -352,6 +352,19 @@ $sql[] = "CREATE TABLE IF NOT EXISTS hub_content_page (
   KEY idx_hub_content_page_published (published, page_key),
   KEY idx_hub_content_page_modified_by (modified_by)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
+$sql[] = "CREATE TABLE IF NOT EXISTS hub_general_content (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  content_key VARCHAR(100) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  body MEDIUMTEXT NOT NULL,
+  sort INT NOT NULL DEFAULT 100,
+  published TINYINT(1) NOT NULL DEFAULT 1,
+  archived TINYINT(1) NOT NULL DEFAULT 0,
+  created DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  modified DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_hub_general_content_key (content_key),
+  KEY idx_hub_general_content_visible (published, archived, sort)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
 $sql[] = "CREATE TABLE IF NOT EXISTS hub_user (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   customer_id INT UNSIGNED NULL,
@@ -669,6 +682,18 @@ $sql[] = "CREATE TABLE IF NOT EXISTS hub_import_fetch (
 
 foreach ($sql as $statement) {
   exec_sql($pdo, $statement);
+}
+
+if (hub_table_exists('hub_general_content')) {
+  $stmtGeneralContent = $pdo->prepare(
+    "INSERT INTO hub_general_content (content_key, title, body, sort, published, archived, created, modified)
+     VALUES ('dashboard_intro', :title, :body, 100, 1, 0, NOW(), NOW())
+     ON DUPLICATE KEY UPDATE content_key = content_key"
+  );
+  $stmtGeneralContent->execute([
+    ':title' => 'Introduction to RX Hub',
+    ':body' => "The Hub to support your Business\n\nRX Hub brings the key areas of your client experience together in one place, giving your team a clear route into reports, project information, support details, and the tools we are building around your day-to-day work with RxSource.\n\nThis space will continue to grow as more live data and controls are connected, helping keep important updates visible, making current information easier to find, and supporting better communication across your business.",
+  ]);
 }
 
 $migrations = [

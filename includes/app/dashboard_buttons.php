@@ -86,6 +86,30 @@ function hub_dashboard_buttons_for_audience(string $audience): array {
   }));
 }
 
+// Temporary dashboard override while the wider client pages are being completed.
+function hub_dashboard_temporary_user_manager_buttons(): array {
+  global $pdo, $DB_OK;
+
+  if ($DB_OK && ($pdo instanceof PDO) && hub_table_exists('hub_dashboard_button')) {
+    $stmt = $pdo->query(
+      "SELECT button_key, title, href, css_class, image_url, count_key, sort
+       FROM hub_dashboard_button
+       WHERE archived = 0
+         AND show_on_web = 1
+         AND button_key IN ('shipping', 'inventory')
+       ORDER BY FIELD(button_key, 'shipping', 'inventory'), sort ASC, title ASC"
+    );
+    $rows = $stmt ? ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []) : [];
+    if ($rows) {
+      return $rows;
+    }
+  }
+
+  return array_values(array_filter(hub_dashboard_default_buttons(), static function (array $button): bool {
+    return in_array((string) ($button['button_key'] ?? ''), ['shipping', 'inventory'], true);
+  }));
+}
+
 function hub_dashboard_button_count(array $button, array $counts): ?int {
   $countKey = trim((string) ($button['count_key'] ?? ''));
   if ($countKey === '' || !array_key_exists($countKey, $counts)) {

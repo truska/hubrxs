@@ -184,8 +184,17 @@ function hub_admin_tools_registry(): array {
       'sort' => 300,
     ],
     [
+      'key' => 'general_content',
+      'title' => 'General Content',
+      'href' => '/admin/general-content.php',
+      'group' => 'content',
+      'minimum_role' => 'super_admin',
+      'lane' => 'internal',
+      'sort' => 100,
+    ],
+    [
       'key' => 'policy_pages',
-      'title' => 'Content',
+      'title' => 'Pages',
       'href' => '/admin/content.php',
       'group' => 'content',
       'minimum_role' => 'super_admin',
