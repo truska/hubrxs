@@ -193,7 +193,7 @@ $flashes = hub_flash_messages();
                   <td><i class="<?php echo hub_h(hub_help_icon_class((string) ($msg['context'] ?? 'info'), (string) ($msg['icon'] ?? ''))); ?>" aria-hidden="true"></i></td>
                   <td><?php echo !empty($msg['show_on_web']) ? 'Yes' : 'No'; ?></td>
                   <td><?php echo !empty($msg['archived']) ? 'Yes' : 'No'; ?></td>
-                  <td class="muted"><?php echo hub_h((string) $msg['modified']); ?></td>
+                  <td class="muted"><?php echo hub_h(hub_format_date($msg['modified'] ?? '')); ?></td>
                   <td><a href="/admin/help-messages.php?id=<?php echo (int) $msg['id']; ?>">Edit</a></td>
                 </tr>
               <?php endforeach; ?>

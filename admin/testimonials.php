@@ -224,7 +224,7 @@ $selectedLogoThumb = hub_testimonial_logo_src($selectedLogoValue, 'xs');
         </div>
 
         <div class="content-editor-meta muted">
-          <?php if (!empty($selected['modified'])): ?>Last updated <?php echo hub_h((string) $selected['modified']); ?><?php else: ?>Not saved yet<?php endif; ?>
+          <?php if (!empty($selected['modified'])): ?>Last updated <?php echo hub_h(hub_format_date($selected['modified'])); ?><?php else: ?>Not saved yet<?php endif; ?>
         </div>
         <div class="links content-editor-actions">
           <button class="but1" type="submit">Save Testimonial</button>

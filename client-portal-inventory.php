@@ -69,7 +69,7 @@ function hub_client_inventory_format_us_date(string $value): string {
   }
 
   try {
-    return (new DateTime($value))->format('m/d/Y');
+    return hub_format_date($value);
   } catch (Throwable $e) {
     return $value;
   }

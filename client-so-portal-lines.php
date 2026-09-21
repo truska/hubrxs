@@ -201,8 +201,8 @@ ksort($statusCounts, SORT_NATURAL | SORT_FLAG_CASE);
                   <td><?php echo hub_h((string) ($row['quantity'] ?? '')); ?></td>
                   <td><?php echo hub_h((string) ($row['lot_serial_nbr'] ?? '')); ?></td>
                   <td><?php echo hub_h((string) ($row['tracking_number'] ?? '')); ?></td>
-                  <td><?php echo hub_h((string) ($row['requested_on'] ?? '')); ?></td>
-                  <td><?php echo hub_h((string) ($row['shipment_date'] ?? '')); ?></td>
+                  <td><?php echo hub_h(hub_format_date($row['requested_on'] ?? '')); ?></td>
+                  <td><?php echo hub_h(hub_format_date($row['shipment_date'] ?? '')); ?></td>
                 </tr>
               <?php endforeach; ?>
             <?php endif; ?>

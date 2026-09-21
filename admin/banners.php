@@ -212,7 +212,7 @@ $selectedImageThumb = hub_dashboard_banner_image_src($selectedImageValue, 'xs');
         </div>
 
         <div class="content-editor-meta muted">
-          <?php if (!empty($selected['modified'])): ?>Last updated <?php echo hub_h((string) $selected['modified']); ?><?php else: ?>Not saved yet<?php endif; ?>
+          <?php if (!empty($selected['modified'])): ?>Last updated <?php echo hub_h(hub_format_date($selected['modified'])); ?><?php else: ?>Not saved yet<?php endif; ?>
         </div>
         <div class="links content-editor-actions">
           <button class="but1" type="submit">Save Banner</button>

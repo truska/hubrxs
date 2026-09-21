@@ -375,7 +375,7 @@ function hub_import_data_cell($value): string {
             <span><?php echo number_format(count($allRows)); ?> staged rows</span>
             <?php if ($latestFetch): ?>
               <span>Fetch #<?php echo (int) $latestFetch['id']; ?></span>
-              <span><?php echo hub_h((string) $latestFetch['finished_at']); ?></span>
+              <span><?php echo hub_h(hub_format_date($latestFetch['finished_at'] ?? '')); ?></span>
             <?php endif; ?>
           </div>
         <?php endif; ?>

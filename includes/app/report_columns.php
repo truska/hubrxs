@@ -474,7 +474,7 @@ function hub_report_format_value($value, string $displayType): string {
   }
   if ($displayType === 'date') {
     try {
-      return (new DateTime($value))->format('m/d/Y');
+      return hub_format_date($value);
     } catch (Throwable $e) {
       return $value;
     }

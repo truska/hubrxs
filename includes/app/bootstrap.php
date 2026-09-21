@@ -14,6 +14,19 @@ function hub_h(string $value): string {
   return htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
 }
 
+/** Format every human-facing date consistently; storage and date inputs stay ISO. */
+function hub_format_date(?string $value): string {
+  $value = trim((string) $value);
+  if ($value === '') {
+    return '';
+  }
+  try {
+    return (new DateTime($value))->format('d M Y');
+  } catch (Throwable $e) {
+    return $value;
+  }
+}
+
 function hub_base_url(string $path = ''): string {
   return cms_base_url($path);
 }

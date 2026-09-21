@@ -146,7 +146,7 @@ $selectedPage = $pageRows[$selectedKey] ?? hub_content_page_get($selectedKey);
         </div>
         <label class="muted content-published-toggle"><input type="checkbox" name="published" value="1" <?php echo ((int) ($selectedPage['published'] ?? 1) === 1) ? 'checked' : ''; ?>> Published</label>
         <div class="content-editor-meta muted">
-          <?php if (!empty($selectedPage['updated_at'])): ?>Last updated <?php echo hub_h((string) $selectedPage['updated_at']); ?><?php else: ?>Not updated yet<?php endif; ?>
+          <?php if (!empty($selectedPage['updated_at'])): ?>Last updated <?php echo hub_h(hub_format_date($selectedPage['updated_at'])); ?><?php else: ?>Not updated yet<?php endif; ?>
         </div>
         <div class="links content-editor-actions">
           <button class="but1" type="submit">Save Page</button>

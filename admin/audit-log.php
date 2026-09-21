@@ -193,7 +193,7 @@ $page = min($page, $totalPages);
                   ?>
                   <tr class="audit-log-main-row<?php echo $hasExpanded ? ' has-expanded-content' : ''; ?>">
                     <td><?php echo (int) $row['id']; ?></td>
-                    <td class="muted"><?php echo hub_h((string) $row['action_time']); ?></td>
+                    <td class="muted"><?php echo hub_h(hub_format_date($row['action_time'] ?? '')); ?></td>
                     <td><?php echo hub_h(hub_audit_log_user_label($row)); ?></td>
                     <td>
                       <strong><?php echo hub_h((string) $row['action_title']); ?></strong>

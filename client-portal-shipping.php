@@ -59,7 +59,7 @@ function hub_client_shipping_fmt_date(?string $value): string {
     return '';
   }
   try {
-    return (new DateTime($value))->format('Y-m-d');
+    return hub_format_date($value);
   } catch (Throwable $e) {
     return (string) $value;
   }

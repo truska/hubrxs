@@ -283,7 +283,7 @@ $messages = hub_flash_messages();
                   </td>
                   <td><?php echo !empty($action['assigned_email']) ? hub_h((string) $action['assigned_email']) : '<span class="muted">Everyone</span>'; ?></td>
                   <td><?php echo hub_h((string) $action['priority']); ?></td>
-                  <td class="muted"><?php echo hub_h((string) $action['created']); ?></td>
+                  <td class="muted"><?php echo hub_h(hub_format_date($action['created'] ?? '')); ?></td>
                   <td>
                     <div class="links">
                       <form method="post" action="/admin.php<?php echo $showAllActions ? '?show_actions=all' : ''; ?>" style="margin:0;">

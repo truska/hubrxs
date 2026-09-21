@@ -147,8 +147,8 @@ $messages = hub_flash_messages();
                   </td>
                   <td><?php echo (int) $run['processed_count']; ?> / <?php echo (int) $run['row_count']; ?></td>
                   <td><?php echo $run['http_status'] ? (int) $run['http_status'] : ''; ?></td>
-                  <td class="muted"><?php echo hub_h((string) $run['started_at']); ?></td>
-                  <td class="muted"><?php echo hub_h((string) $run['finished_at']); ?></td>
+                  <td class="muted"><?php echo hub_h(hub_format_date($run['started_at'] ?? '')); ?></td>
+                  <td class="muted"><?php echo hub_h(hub_format_date($run['finished_at'] ?? '')); ?></td>
                   <td class="muted import-result-cell">
                     <?php if (!empty($run['error_text'])): ?>
                       <?php echo hub_h((string) $run['error_text']); ?>
