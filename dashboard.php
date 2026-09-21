@@ -506,19 +506,15 @@ $portalHeaderAction = $portalIsDashboard
   <section class="portal-news portal-section" aria-label="RxSource LinkedIn news feed"<?php echo $portalSectionAttrs('linkedin-feed'); ?>>
     <div class="portal-news-inner">
       <h2>RxSource News Feed</h2>
-      <div class="portal-news-grid">
-        <?php for ($feedItem = 1; $feedItem <= 4; $feedItem++): ?>
-          <a class="portal-news-card" href="https://www.linkedin.com/company/rxsource">
-            <div class="portal-news-card-header">
-              <span class="portal-news-dot"></span>
-              <strong>RxSource</strong>
-            </div>
-            <div class="portal-news-card-body">
-              <span>LinkedIn post preview</span>
-            </div>
-            <div class="portal-news-card-footer">View on LinkedIn</div>
-          </a>
-        <?php endfor; ?>
+      <div class="portal-news-embed">
+        <iframe
+          src="https://widgets.sociablekit.com/linkedin-page-posts/iframe/25698657"
+          title="RxSource LinkedIn posts"
+          loading="lazy"
+          width="100%"
+          height="520"
+          frameborder="0"
+        ></iframe>
       </div>
     </div>
   </section>
