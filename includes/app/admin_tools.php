@@ -229,6 +229,15 @@ function hub_admin_tools_registry(): array {
       'sort' => 500,
     ],
     [
+      'key' => 'site_settings',
+      'title' => 'Settings',
+      'href' => '/admin/settings.php',
+      'group' => 'tools',
+      'minimum_role' => 'super_admin',
+      'lane' => 'internal',
+      'sort' => 50,
+    ],
+    [
       'key' => 'dashboard_buttons',
       'title' => 'Dashboard',
       'href' => '/admin/dashboard-buttons.php',

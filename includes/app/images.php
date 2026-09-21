@@ -42,6 +42,15 @@ function hub_image_upload_profiles(): array {
         'xs' => 150,
       ],
     ],
+    'site_preference_image' => [
+      'section' => 'content',
+      'max_bytes' => 8 * 1024 * 1024,
+      'max_pixels' => 25000000,
+      'sizes' => [
+        'lg' => 1200,
+        'md' => 600,
+      ],
+    ],
   ];
 }
 

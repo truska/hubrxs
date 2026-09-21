@@ -273,7 +273,8 @@ if (!empty($keyInfoContacts)) {
   ];
 }
 $adminActionCount = 0;
-if (hub_is_admin() && $DB_OK && ($pdo instanceof PDO) && hub_table_exists('hub_admin_action')) {
+$showDashboardActions = hub_pref_bool('prefActions', true);
+if ($showDashboardActions && hub_is_admin() && $DB_OK && ($pdo instanceof PDO) && hub_table_exists('hub_admin_action')) {
   $stmtActions = $pdo->prepare(
     'SELECT COUNT(*)
      FROM hub_admin_action
@@ -416,7 +417,7 @@ $portalHeaderAction = $portalIsDashboard
     </section>
   <?php endif; ?>
 
-  <?php if ($adminActionCount > 0): ?>
+  <?php if ($showDashboardActions && $adminActionCount > 0): ?>
     <section class="portal-user-actions portal-actions-complete portal-section" aria-label="Action reminders"<?php echo $portalSectionAttrs('admin-actions'); ?>>
       <div class="portal-user-action-bar">
         <h2>You have Actions to Complete</h2>
