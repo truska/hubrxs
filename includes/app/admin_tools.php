@@ -34,7 +34,7 @@ function hub_admin_tool_groups(): array {
       'sort' => 400,
     ],
     'content' => [
-      'title' => 'Content',
+      'title' => 'General Content',
       'description' => 'Manage published content, testimonials, FAQs, and policy pages.',
       'sort' => 500,
     ],
@@ -185,7 +185,7 @@ function hub_admin_tools_registry(): array {
     ],
     [
       'key' => 'policy_pages',
-      'title' => 'Policies',
+      'title' => 'Content',
       'href' => '/admin/content.php',
       'group' => 'content',
       'minimum_role' => 'super_admin',

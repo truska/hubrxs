@@ -3,6 +3,7 @@ require_once __DIR__ . '/auth.php';
 
 function hub_content_page_keys(): array {
   return [
+    'dashboard_intro' => ['title' => 'Dashboard Introduction', 'path' => '/dashboard.php', 'slug' => 'dashboard-introduction'],
     'privacy_policy' => ['title' => 'Privacy Policy', 'path' => '/privacy-policy.php', 'slug' => 'privacy-policy'],
     'cookie_policy' => ['title' => 'Cookie Policy', 'path' => '/cookie-policy.php', 'slug' => 'cookie-policy'],
     'terms' => ['title' => 'Terms of Use', 'path' => '/terms.php', 'slug' => 'terms'],
@@ -15,6 +16,7 @@ function hub_content_page_defaults(string $pageKey): array {
   $pageDef = $pages[$pageKey] ?? [];
   $title = (string) ($pageDef['title'] ?? 'Content Page');
   $defaultBodies = [
+    'dashboard_intro' => "The Hub to support your Business\n\nRX Hub brings the key areas of your client experience together in one place, giving your team a clear route into reports, project information, support details, and the tools we are building around your day-to-day work with RxSource.\n\nThis space will continue to grow as more live data and controls are connected, helping keep important updates visible, making current information easier to find, and supporting better communication across your business.",
     'privacy_policy' => 'How RxSource handles personal information for Hub users and website visitors.',
     'cookie_policy' => 'Information about cookies and similar technologies used by the Hub.',
     'terms' => 'General terms for accessing and using the RxSource Hub.',
