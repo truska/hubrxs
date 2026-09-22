@@ -183,6 +183,14 @@ if (
       }
       $reportRow[$columnKey] = $value;
     }
+    // Keep the core shipping dates resilient if a report-column source mapping
+    // has been changed: the live source still supplies these canonical keys.
+    if (empty($reportRow['requested_on'])) {
+      $reportRow['requested_on'] = trim((string) ($sourceRow['requested_on'] ?? '')) ?: hub_report_json_value($rawJson, 'RequestedOn');
+    }
+    if (empty($reportRow['shipment_date'])) {
+      $reportRow['shipment_date'] = trim((string) ($sourceRow['shipment_date'] ?? '')) ?: hub_report_json_value($rawJson, 'ShipmentDate');
+    }
     $allRows[] = $reportRow;
   }
 
