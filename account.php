@@ -35,36 +35,6 @@ function hub_account_customer_label(array $row): string {
   return $name !== '' ? $name : $code;
 }
 
-function hub_account_totp_qr_data_uri(string $payload): string {
-  $qrencode = is_file('/usr/bin/qrencode') ? '/usr/bin/qrencode' : trim((string) shell_exec('command -v qrencode'));
-  if ($qrencode === '') {
-    return '';
-  }
-
-  $inputFile = tempnam(sys_get_temp_dir(), 'hub_account_totp_uri_');
-  $outputFile = tempnam(sys_get_temp_dir(), 'hub_account_totp_qr_');
-  if ($inputFile === false || $outputFile === false) {
-    return '';
-  }
-
-  try {
-    file_put_contents($inputFile, $payload);
-    chmod($inputFile, 0600);
-    $cmd = escapeshellcmd($qrencode) . ' -o ' . escapeshellarg($outputFile) . ' -t PNG -s 7 -m 2 -r ' . escapeshellarg($inputFile);
-    exec($cmd, $unused, $exitCode);
-    if ($exitCode !== 0 || !is_file($outputFile) || filesize($outputFile) <= 0) {
-      return '';
-    }
-    return 'data:image/png;base64,' . base64_encode((string) file_get_contents($outputFile));
-  } finally {
-    if (is_string($inputFile) && is_file($inputFile)) {
-      unlink($inputFile);
-    }
-    if (is_string($outputFile) && is_file($outputFile)) {
-      unlink($outputFile);
-    }
-  }
-}
 function hub_account_load_user(int $userId): ?array {
   global $pdo, $DB_OK;
   if ($userId <= 0 || !$DB_OK || !($pdo instanceof PDO) || !hub_table_exists('hub_user')) {
@@ -218,13 +188,11 @@ $totpRecord = hub_totp_record_for_user($userId);
 $authAppEnabled = $totpRecord && (int) ($totpRecord['enabled'] ?? 0) === 1 && !empty($totpRecord['confirmed_at']);
 $showAuthAppSetup = !$authAppEnabled && !empty($_SESSION['hub_account_totp_setup']);
 $authAppSetupData = null;
-$authAppQrDataUri = '';
 if ($showAuthAppSetup && $totpRecord) {
   $authAppSetupData = [
     'secret' => (string) ($totpRecord['secret'] ?? ''),
     'otpauth_uri' => hub_totp_otpauth_uri($account, (string) ($totpRecord['secret'] ?? '')),
   ];
-  $authAppQrDataUri = hub_account_totp_qr_data_uri((string) $authAppSetupData['otpauth_uri']);
 }
 ?>
 <!DOCTYPE html>
@@ -344,11 +312,9 @@ if ($showAuthAppSetup && $totpRecord) {
             <div class="account-security-status"><i class="fa-solid fa-circle-check" aria-hidden="true"></i><span>Enabled</span></div>
           <?php elseif ($showAuthAppSetup && $authAppSetupData): ?>
             <div class="account-auth-app-setup">
-              <?php if ($authAppQrDataUri !== ''): ?>
-                <div class="auth-setup-qr">
-                  <img src="<?php echo hub_h($authAppQrDataUri); ?>" alt="Authenticator app QR code">
-                </div>
-              <?php endif; ?>
+              <div class="auth-setup-qr">
+                <img src="/twofa-qr.php" alt="Authenticator app QR code">
+              </div>
               <div class="auth-setup-key">
                 <label>Setup Key</label>
                 <code><?php echo hub_h((string) $authAppSetupData['secret']); ?></code>
