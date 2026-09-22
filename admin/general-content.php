@@ -7,9 +7,15 @@ if ($_SERVER['REQUEST_METHOD']==='POST') {
   if (!hub_verify_csrf($_POST['csrf']??'')) $error='Session expired. Please try again.';
   elseif (!$DB_OK || !($pdo instanceof PDO) || !hub_general_content_ready()) $error='General content storage is not available. Run the schema installer.';
   else try {
-    $id=(int)($_POST['id']??0); if($id<=0) throw new RuntimeException('Content item not found.');
+    $id=(int)($_POST['id']??0);
     $data=[':id'=>$id,':key'=>preg_replace('/[^a-z0-9_-]+/i','-',strtolower(trim((string)($_POST['content_key']??'')))),':title'=>trim((string)($_POST['title']??'')),':body'=>trim((string)($_POST['body']??'')),':sort'=>(int)($_POST['sort']??100),':published'=>!empty($_POST['published'])?1:0];
-    $pdo->prepare('UPDATE hub_general_content SET content_key=:key,title=:title,body=:body,sort=:sort,published=:published,modified=NOW() WHERE id=:id LIMIT 1')->execute($data);
+    if ($id <= 0) {
+      $insertData=$data; unset($insertData[':id']);
+      $pdo->prepare('INSERT INTO hub_general_content (content_key,title,body,sort,published,archived,created,modified) VALUES (:key,:title,:body,:sort,:published,0,NOW(),NOW())')->execute($insertData);
+      $id=(int)$pdo->lastInsertId();
+    } else {
+      $pdo->prepare('UPDATE hub_general_content SET content_key=:key,title=:title,body=:body,sort=:sort,published=:published,modified=NOW() WHERE id=:id LIMIT 1')->execute($data);
+    }
     hub_flash('success','General content saved.'); hub_redirect('/admin/general-content.php?id='.$id);
   } catch(Throwable $e) {$error='Unable to save content.';}
 }
