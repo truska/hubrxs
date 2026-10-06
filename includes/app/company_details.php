@@ -21,12 +21,22 @@ function hub_company_fields(): array {
     ],
     'USA' => [
       'prefUSALabel' => ['Office heading', 'text', 'USA'],
-      'prefUSAAddress' => ['Address (one line per address line)', 'textarea', "Unit 300\n1240 Forest Parkway\nWest Deptford\nNew Jersey\nUSA\n08066"],
+      'prefUSAAddress1' => ['Address line 1', 'text', 'Unit 300'],
+      'prefUSAAddress2' => ['Address line 2', 'text', '1240 Forest Parkway'],
+      'prefUSATown' => ['Town / city', 'text', 'West Deptford'],
+      'prefUSACounty' => ['Province / state', 'text', 'New Jersey'],
+      'prefUSACountry' => ['Country', 'text', 'USA'],
+      'prefUSAPostcode' => ['Postal code', 'text', '08066'],
       'prefTel2' => ['Telephone (include country code)', 'tel', '+1 905 883 4333'],
     ],
     'Europe' => [
       'prefEuropeLabel' => ['Office heading', 'text', 'EUROPE'],
-      'prefEuropeAddress' => ['Address (one line per address line)', 'textarea', "Unit 506\nNorthwest Business Park, Ballycoolin\nDublin 15\nIreland"],
+      'prefEuropeAddress1' => ['Address line 1', 'text', 'Unit 506'],
+      'prefEuropeAddress2' => ['Address line 2', 'text', 'Northwest Business Park, Ballycoolin'],
+      'prefEuropeTown' => ['Town / city', 'text', 'Dublin 15'],
+      'prefEuropeCounty' => ['Province / state', 'text', ''],
+      'prefEuropeCountry' => ['Country', 'text', 'Ireland'],
+      'prefEuropePostcode' => ['Postal code', 'text', ''],
       'prefTel3' => ['Telephone (include country code)', 'tel', '+353 (1) 963-1100'],
     ],
     'Social links' => [
@@ -49,16 +59,16 @@ function hub_company_url(string $name): string {
 }
 
 function hub_company_offices(): array {
-  $canada = [];
-  foreach (['prefAddress1', 'prefAddress2', 'prefTown', 'prefCounty', 'prefCountry', 'prefPostcode'] as $name) {
-    $value = hub_company_value($name);
-    if ($value !== '') $canada[] = $value;
+  $offices = [];
+  foreach (['' => ['prefCanadaLabel', 'prefTel1'], 'USA' => ['prefUSALabel', 'prefTel2'], 'Europe' => ['prefEuropeLabel', 'prefTel3']] as $prefix => [$label, $phone]) {
+    $lines = [];
+    foreach (['Address1', 'Address2', 'Town', 'County', 'Country', 'Postcode'] as $field) {
+      $value = hub_company_value('pref' . $prefix . $field);
+      if ($value !== '') $lines[] = $value;
+    }
+    $offices[] = ['label' => hub_company_value($label), 'address' => implode("\n", $lines), 'phone' => hub_company_value($phone)];
   }
-  return [
-    ['label' => hub_company_value('prefCanadaLabel'), 'address' => implode("\n", $canada), 'phone' => hub_company_value('prefTel1')],
-    ['label' => hub_company_value('prefUSALabel'), 'address' => hub_company_value('prefUSAAddress'), 'phone' => hub_company_value('prefTel2')],
-    ['label' => hub_company_value('prefEuropeLabel'), 'address' => hub_company_value('prefEuropeAddress'), 'phone' => hub_company_value('prefTel3')],
-  ];
+  return $offices;
 }
 
 function hub_company_save(array $input): void {
