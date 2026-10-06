@@ -174,15 +174,22 @@ function hub_dev_task_list(array $filters, int $page, string $sort): array {
   } elseif ($status !== 'all') {
     $where[] = "t.status IN ('open','in_progress','completed','on_hold')";
   }
-  if (!empty($filters['priority'])) { $where[]='t.priority=?'; $params[]=(int) $filters['priority']; }
-  $assignee = (string) ($filters['assignee'] ?? '');
-  if ($assignee === 'unassigned') $where[] = 't.next_action_by IS NULL';
-  elseif ($assignee !== '') { $where[]='t.next_action_by=?'; $params[]=(int) $assignee; }
-  if (!empty($filters['raised_by'])) { $where[]='t.created_by=?'; $params[]=(int) $filters['raised_by']; }
-  $search = trim((string) ($filters['q'] ?? ''));
-  if ($search !== '') {
-    $where[] = '(t.task_name LIKE ? OR t.task_note LIKE ? OR EXISTS (SELECT 1 FROM hub_dev_task_comment m WHERE m.task_id=t.id AND m.message LIKE ?))';
-    array_push($params, '%' . $search . '%', '%' . $search . '%', '%' . $search . '%');
+  $columns = is_array($filters['col'] ?? null) ? $filters['col'] : [];
+  $exact = ['id'=>'t.id', 'priority'=>'t.priority', 'assignee'=>'t.next_action_by', 'raised_by'=>'t.created_by', 'updated_by'=>'t.updated_by', 'status'=>'t.status'];
+  foreach ($exact as $key=>$expression) {
+    $value = trim((string) ($columns[$key] ?? ''));
+    if ($value === '') continue;
+    if ($key==='assignee' && $value==='unassigned') $where[]='t.next_action_by IS NULL';
+    else { $where[]=$expression . '=?'; $params[]=$key==='id' ? ltrim($value,'#') : $value; }
+  }
+  foreach (['name'=>'t.task_name', 'updated'=>"DATE_FORMAT(t.modified, '%d %b %Y, %H:%i')"] as $key=>$expression) {
+    $value=trim((string) ($columns[$key] ?? ''));
+    if ($value!=='') { $where[]=$expression . ' LIKE ?'; $params[]='%' . $value . '%'; }
+  }
+  $conversation=trim((string) ($columns['conversation'] ?? ''));
+  if ($conversation!=='') {
+    $where[]='EXISTS (SELECT 1 FROM hub_dev_task_comment m WHERE m.task_id=t.id AND (m.message LIKE ? OR m.author_name LIKE ?))';
+    array_push($params, '%' . $conversation . '%', '%' . $conversation . '%');
   }
   $whereSql = $where ? ' WHERE ' . implode(' AND ', $where) : '';
   $stmt = $pdo->prepare('SELECT COUNT(*) FROM hub_dev_task t' . $whereSql);
@@ -190,12 +197,16 @@ function hub_dev_task_list(array $filters, int $page, string $sort): array {
   $total = (int) $stmt->fetchColumn();
   $pages = max(1, (int) ceil($total / 50));
   $page = max(1, min($page, $pages));
-  $sorts = ['priority'=>'t.priority ASC,t.modified DESC,t.id DESC', 'updated'=>'t.modified DESC,t.id DESC', 'oldest'=>'t.created ASC,t.id ASC', 'name'=>'t.task_name ASC,t.id ASC', 'assignee'=>'COALESCE(a.display_name,a.email,\'zzzz\') ASC,t.priority ASC,t.id DESC'];
-  $stmt = $pdo->prepare('SELECT t.*, c.display_name AS creator_name,c.email AS creator_email,u.display_name AS editor_name,u.email AS editor_email,a.display_name AS assignee_name,a.email AS assignee_email,(SELECT COUNT(*) FROM hub_dev_task_comment m WHERE m.task_id=t.id AND m.is_activity=0) AS comment_count FROM hub_dev_task t LEFT JOIN hub_user c ON c.id=t.created_by LEFT JOIN hub_user u ON u.id=t.updated_by LEFT JOIN hub_user a ON a.id=t.next_action_by' . $whereSql . ' ORDER BY ' . ($sorts[$sort] ?? $sorts['priority']) . ' LIMIT 50 OFFSET ' . (($page-1)*50));
+  $sorts = ['id'=>'t.id', 'priority'=>'t.priority', 'name'=>'t.task_name', 'assignee'=>"COALESCE(NULLIF(a.display_name,''),a.email,'zzzz')", 'raised_by'=>"COALESCE(NULLIF(c.display_name,''),c.email,'')", 'updated_by'=>"COALESCE(NULLIF(u.display_name,''),u.email,'')", 'conversation'=>'comment_count', 'updated'=>'t.modified', 'status'=>'t.status'];
+  $sortColumn = preg_replace('/_(asc|desc)$/', '', $sort);
+  $direction = str_ends_with($sort, '_desc') ? ' DESC' : ' ASC';
+  $order = ($sorts[$sortColumn] ?? $sorts['priority']) . $direction . ',t.id DESC';
+  $stmt = $pdo->prepare('SELECT t.*, c.display_name AS creator_name,c.email AS creator_email,u.display_name AS editor_name,u.email AS editor_email,a.display_name AS assignee_name,a.email AS assignee_email,(SELECT COUNT(*) FROM hub_dev_task_comment m WHERE m.task_id=t.id AND m.is_activity=0) AS comment_count FROM hub_dev_task t LEFT JOIN hub_user c ON c.id=t.created_by LEFT JOIN hub_user u ON u.id=t.updated_by LEFT JOIN hub_user a ON a.id=t.next_action_by' . $whereSql . ' ORDER BY ' . $order . ' LIMIT 50 OFFSET ' . (($page-1)*50));
   $stmt->execute($params);
+  $rows=$stmt->fetchAll(PDO::FETCH_ASSOC);
   $counts = array_fill_keys(array_keys(hub_dev_task_statuses()), 0);
   foreach ($pdo->query('SELECT status,COUNT(*) AS qty FROM hub_dev_task GROUP BY status')->fetchAll(PDO::FETCH_ASSOC) as $row) $counts[$row['status']] = (int) $row['qty'];
-  return ['rows'=>$stmt->fetchAll(PDO::FETCH_ASSOC), 'total'=>$total, 'page'=>$page, 'pages'=>$pages, 'counts'=>$counts];
+  return ['rows'=>$rows, 'total'=>$total, 'page'=>$page, 'pages'=>$pages, 'counts'=>$counts];
 }
 
 function hub_dev_task_person(array $task, string $prefix): string {

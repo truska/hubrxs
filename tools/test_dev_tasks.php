@@ -53,13 +53,29 @@ $rejected=false; try { hub_dev_task_save('comment',99999999,['message'=>'Missing
 dt_check($rejected && !$pdo->inTransaction(),'Missing task cannot receive orphan comments');
 $thread=$pdo->query('SELECT message FROM hub_dev_task_comment WHERE task_id=' . $id . ' ORDER BY created,id')->fetchAll(PDO::FETCH_COLUMN);
 dt_check($thread[0]==='Initial question' && $thread[1]==='Progress comment' && in_array('Task notes updated.',$thread,true),'Thread is chronological and records task activity');
-$list=hub_dev_task_list(['status'=>'all','q'=>'Progress comment','assignee'=>'900002'],1,'priority');
+$list=hub_dev_task_list(['status'=>'all','col'=>['conversation'=>'Progress comment','assignee'=>'900002']],1,'priority');
 dt_check($list['total']===1 && (int)$list['rows'][0]['comment_count']===2,'Search finds comment text and counts conversation comments');
 dt_check(hub_dev_task_list(['status'=>'open'],1,'updated')['total']===0,'Status filter excludes On Hold task');
 dt_check(hub_dev_task_list(['status'=>'active'],1,'updated')['total']===1,'Active filter includes On Hold task');
+$other=hub_dev_task_save('create',0,['task_name'=>'Another fixture','priority'=>'5','status'=>'future','message'=>'Different conversation','task_note'=>'','next_action_by'=>''],[],$second);
+$pdo->exec("UPDATE hub_dev_task SET modified='2026-01-01 10:00:00' WHERE id=" . $id);
+$pdo->exec("UPDATE hub_dev_task SET modified='2026-01-02 10:00:00' WHERE id=" . $other);
+foreach (['id'=>'#'.$id,'priority'=>'2','name'=>'Task fixture','assignee'=>'900002','raised_by'=>'900001','updated_by'=>'900001','conversation'=>'Progress comment','updated'=>'01 Jan 2026','status'=>'on_hold'] as $key=>$value) {
+  $result=hub_dev_task_list(['status'=>'all','col'=>[$key=>$value]],1,'id_asc');
+  dt_check($result['total']===1 && (int)$result['rows'][0]['id']===$id,'Column filter: ' . $key);
+}
+dt_check(hub_dev_task_list(['status'=>'all','col'=>['assignee'=>'unassigned']],1,'id_asc')['total']===1,'Unassigned select filter');
+foreach (['id','priority','name','assignee','raised_by','updated_by','conversation','updated','status'] as $key) foreach (['asc','desc'] as $direction) {
+  $result=hub_dev_task_list(['status'=>'all'],1,$key.'_'.$direction);
+  dt_check(count($result['rows'])===2,'Header sort executes: ' . $key . ' ' . $direction);
+}
+dt_check((int)hub_dev_task_list(['status'=>'all'],1,'priority_asc')['rows'][0]['id']===$id && (int)hub_dev_task_list(['status'=>'all'],1,'priority_desc')['rows'][0]['id']===$other,'Priority sorting toggles direction');
+dt_check((int)hub_dev_task_list(['status'=>'all'],1,'name_asc')['rows'][0]['id']===$id && (int)hub_dev_task_list(['status'=>'all'],1,'name_desc')['rows'][0]['id']===$other,'Task-name sorting toggles direction');
+dt_check((int)hub_dev_task_list(['status'=>'all'],1,'updated_asc')['rows'][0]['id']===$id && (int)hub_dev_task_list(['status'=>'all'],1,'updated_desc')['rows'][0]['id']===$other,'Updated sorting toggles direction');
+dt_check(hub_dev_task_list(['status'=>'future'],1,'id_asc')['total']===1 && hub_dev_task_list(['status'=>'all'],1,'id_asc')['counts']['future']===1,'Status links filter tasks and show full-list counts');
 for ($i=0;$i<52;$i++) $pdo->prepare('INSERT INTO hub_dev_task(task_name,task_note,created_by,updated_by) VALUES (?,\'\',900001,900001)')->execute(['Paging fixture ' . $i]);
 $list=hub_dev_task_list(['status'=>'all'],2,'updated');
-dt_check($list['total']===53 && count($list['rows'])===3 && $list['pages']===2,'Task list paginates without dropping records');
+dt_check($list['total']===54 && count($list['rows'])===4 && $list['pages']===2,'Task list paginates without dropping records');
 $_SERVER['REQUEST_METHOD']='GET'; $_GET=['id'=>$id];
 ob_start(); include __DIR__ . '/../admin/dev-task.php'; $html=ob_get_clean();
 dt_check(str_contains($html,'&lt;script&gt;Task fixture&lt;/script&gt;') && !str_contains($html,'<script>Task fixture</script>'),'Task names are escaped in page output');
@@ -67,4 +83,7 @@ dt_check(str_contains($html,'Updated shared plan') && str_contains($html,'Progre
 $_GET=[];
 ob_start(); include __DIR__ . '/../admin/dev-tasks.php'; $html=ob_get_clean();
 dt_check(str_contains($html,'Dev Tasks') && str_contains($html,'Next action') && str_contains($html,'Last edited by'),'List page renders task tracking fields');
+dt_check(substr_count($html, 'scope="col"')===9 && substr_count($html, 'data-auto-filter')===9 && str_contains($html,'import-data-filter-row'),'All nine table headers provide sorting and search/select filters');
+dt_check(!str_contains($html,'class="dev-task-filters"') && !str_contains($html,'Sort by') && str_contains($html,'dev-task-status-tabs'),'Status counts replace standalone filters');
+dt_check(str_contains($html,'col%5Bconversation%5D') && str_contains($html,'sort=id_asc'),'Sort links preserve column-filter parameters');
 echo "All checks passed using temporary tables; live task/user/audit data unchanged.\n";

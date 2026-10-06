@@ -117,7 +117,8 @@
 
         if (field.tagName !== 'SELECT') {
           var valueLength = field.value.trim().length;
-          if (valueLength > 0 && valueLength < 3) return;
+          var minLength = Number.parseInt(field.dataset.filterMinLength || '3', 10);
+          if (valueLength > 0 && valueLength < minLength) return;
         }
 
         timers.set(form, window.setTimeout(function () {

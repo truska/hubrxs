@@ -4900,17 +4900,26 @@ body.portal-testimonials-page {
 
 /* Developer task tracker: shared conversation with a separate task note. */
 .dev-tasks-wrap { width: 100%; max-width: 1500px; margin: 0 auto; display: grid; gap: 20px; }
-.dev-task-status-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
-.dev-task-status-tabs a { padding: 9px 12px; border: 1px solid var(--hub-surface-border); border-radius: 7px; color: inherit; text-decoration: none; }
+.dev-task-list-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.dev-task-status-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.dev-task-status-tabs a { padding: 8px 10px; border: 1px solid var(--hub-surface-border); border-radius: 7px; color: inherit; text-decoration: none; }
 .dev-task-status-tabs a.is-active { background: var(--rx-grey-dark); color: #fff; }
-.dev-task-status-tabs span { margin-left: 4px; font-size: .85em; }
-.dev-task-filters { display: grid; grid-template-columns: 2fr repeat(4, minmax(0, 1fr)); gap: 16px; align-items: end; }
-.dev-task-filters .links { grid-column: 1 / -1; justify-content: flex-start; }
+.dev-task-status-tabs span { margin-left: 5px; padding: 2px 5px; border-radius: 4px; background: #fff; color: var(--rx-grey-dark); font-size: .85em; }
 .dev-task-table-scroll { overflow-x: auto; }
-.dev-task-table { min-width: 1000px; }
-.dev-task-table td { vertical-align: top; }
-.dev-task-table td:first-child { min-width: 240px; max-width: 360px; overflow-wrap: anywhere; }
-.dev-task-table small { display: block; margin-top: 8px; }
+.dev-task-table { min-width: 1150px; width: 100%; table-layout: fixed; }
+.dev-task-table th { text-transform: none; letter-spacing: 0; }
+.dev-task-table th:nth-child(1) { width: 65px; }
+.dev-task-table th:nth-child(2) { width: 80px; }
+.dev-task-table th:nth-child(3) { width: 190px; }
+.dev-task-table th:nth-child(7) { width: 150px; }
+.dev-task-table th:nth-child(8) { width: 170px; }
+.dev-task-table th:nth-child(9) { width: 110px; }
+.dev-task-table td { vertical-align: middle; overflow-wrap: anywhere; white-space: normal; }
+.dev-task-table .import-data-filter-row input, .dev-task-table .import-data-filter-row select { min-width: 0; width: 100%; }
+.dev-task-title-row td { border-bottom: 0; padding: 12px 10px 3px 155px; }
+.dev-task-details-row td { border-top: 0; padding-top: 4px; padding-bottom: 14px; }
+.dev-task-group-striped { background: rgba(38, 51, 59, .045); }
+.dev-task-record-count { margin-left: 145px; }
 .dev-task-title { font-weight: 700; }
 .dev-task-badge { display: inline-block; border-radius: 6px; padding: 6px 9px; background: #e0e6e9; color: #26333b; font-size: 13px; white-space: nowrap; }
 .dev-task-badge.priority-1, .dev-task-badge.priority-2 { background: #fde4e6; color: #9d1825; }
@@ -4932,12 +4941,12 @@ body.portal-testimonials-page {
 .dev-task-image-link img { display: block; max-width: 100%; max-height: 500px; height: auto; border: 1px solid var(--hub-surface-border); border-radius: 8px; }
 .dev-tasks-page textarea { margin-bottom: 18px; }
 @media (max-width: 980px) {
-  .dev-task-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dev-task-detail-grid { grid-template-columns: minmax(0, 1fr); }
   .dev-task-notes { position: static; grid-row: 1; }
 }
 @media (max-width: 620px) {
-  .dev-task-filters, .dev-task-fields { grid-template-columns: minmax(0, 1fr); }
+  .dev-task-fields { grid-template-columns: minmax(0, 1fr); }
   .dev-task-status-tabs a { flex: 1 1 auto; text-align: center; }
   .dev-task-meta { display: grid; gap: 12px; }
+  .dev-task-record-count { margin-left: 0; }
 }
