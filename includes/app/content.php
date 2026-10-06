@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/company_details.php';
 
 function hub_content_page_keys(): array {
   return [
@@ -228,7 +229,8 @@ function hub_content_sanitize_html(string $html): string {
 function hub_content_render_text(string $body): string {
   $body = trim($body);
   if ($body === '') {
-    return '<p>This page is awaiting approved content. For questions, contact <a href="mailto:solutions@rxsource.com">solutions@rxsource.com</a>.</p>';
+    $email = hub_company_value('prefEmail');
+    return '<p>This page is awaiting approved content.' . ($email !== '' ? ' For questions, contact <a href="mailto:' . hub_h($email) . '">' . hub_h($email) . '</a>.' : '') . '</p>';
   }
 
   if ($body === strip_tags($body)) {

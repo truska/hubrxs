@@ -3,6 +3,7 @@ require_once __DIR__ . '/includes/app/announcements.php';
 require_once __DIR__ . '/includes/app/banners.php';
 require_once __DIR__ . '/includes/app/dashboard_buttons.php';
 require_once __DIR__ . '/includes/app/images.php';
+require_once __DIR__ . '/includes/app/company_details.php';
 hub_require_login();
 
 $user = hub_current_user();
@@ -302,7 +303,7 @@ $portalIsDashboard = basename((string) ($_SERVER['SCRIPT_NAME'] ?? '')) === 'das
 $portalHeaderAction = $portalIsDashboard
   ? [
     'label' => 'Visit our website',
-    'href' => 'https://www.rxsource.com/',
+    'href' => hub_company_url('prefWebsite'),
     'target' => '_blank',
     'rel' => 'noopener',
   ]
@@ -349,7 +350,9 @@ $portalHeaderAction = $portalIsDashboard
       <?php endif; ?>
       <a class="portal-admin-link" href="/faq.php?page=dashboard" title="Help"><i class="<?php echo hub_h(hub_nav_icon_class('help')); ?>" aria-hidden="true"></i><span>Help</span></a>
       <a class="portal-admin-link" href="/logout.php" title="Logout"><i class="<?php echo hub_h(hub_nav_icon_class('logout')); ?>" aria-hidden="true"></i><span>Logout</span></a>
+      <?php if ($portalHeaderAction['href'] !== ''): ?>
       <a class="portal-website-link" href="<?php echo hub_h($portalHeaderAction['href']); ?>" title="<?php echo hub_h($portalHeaderAction['label']); ?>"<?php echo $portalHeaderAction['target'] !== '' ? ' target="' . hub_h($portalHeaderAction['target']) . '"' : ''; ?><?php echo $portalHeaderAction['rel'] !== '' ? ' rel="' . hub_h($portalHeaderAction['rel']) . '"' : ''; ?>><?php echo hub_h($portalHeaderAction['label']); ?></a>
+      <?php endif; ?>
     </div>
   </header>
 
@@ -522,30 +525,25 @@ $portalHeaderAction = $portalIsDashboard
   <footer class="portal-footer portal-section"<?php echo $portalSectionAttrs('footer'); ?>>
     <div class="portal-footer-inner">
       <div class="portal-footer-addresses">
-        <div>
-          <strong>CANADA</strong>
-          <p>74-556 Edward Ave<br>Richmond Hill<br>Canada<br>L4C 9Y5</p>
-          <p>+1 905 883 4333</p>
-        </div>
-        <div>
-          <strong>USA</strong>
-          <p>Unit 300<br>1240 Forest Parkway<br>West Deptford<br>New Jersey<br>USA<br>08066</p>
-          <p>+1 905 883 4333</p>
-        </div>
-        <div>
-          <strong>EUROPE</strong>
-          <p>Unit 506<br>Northwest Business Park, Ballycoolin<br>Dublin 15<br>Ireland</p>
-          <p>+353 (1) 963-1100</p>
-        </div>
+        <?php foreach (hub_company_offices() as $office): ?>
+          <?php if ($office['address'] === '' && $office['phone'] === '') continue; ?>
+          <div>
+            <strong><?php echo hub_h($office['label']); ?></strong>
+            <?php if ($office['address'] !== ''): ?><p><?php echo nl2br(hub_h($office['address'])); ?></p><?php endif; ?>
+            <?php if ($office['phone'] !== ''): ?><p><a href="<?php echo hub_h(hub_key_info_phone_href($office['phone'])); ?>"><?php echo hub_h($office['phone']); ?></a></p><?php endif; ?>
+          </div>
+        <?php endforeach; ?>
       </div>
       <div class="portal-footer-contact">
-        <div class="portal-socials" aria-label="RxSource social links">
-          <a href="https://www.linkedin.com/company/rxsource" aria-label="LinkedIn"><i class="fa-brands fa-linkedin-in"></i></a>
-          <a href="https://twitter.com/rxsource" aria-label="X / Twitter"><i class="fa-brands fa-x-twitter"></i></a>
-          <a href="https://www.instagram.com/rxsource" aria-label="Instagram"><i class="fa-brands fa-instagram"></i></a>
-          <a href="https://www.youtube.com/@RxSource" aria-label="YouTube"><i class="fa-brands fa-youtube"></i></a>
+        <div class="portal-socials" aria-label="Company social links">
+          <?php foreach (['prefLinkedIn' => ['LinkedIn', 'linkedin-in'], 'prefTwitter' => ['X / Twitter', 'x-twitter'], 'prefInstagram' => ['Instagram', 'instagram'], 'prefYouTube' => ['YouTube', 'youtube']] as $name => [$label, $icon]): ?>
+            <?php $socialUrl = hub_company_url($name); if ($socialUrl === '') continue; ?>
+            <a href="<?php echo hub_h($socialUrl); ?>" aria-label="<?php echo hub_h($label); ?>"><i class="fa-brands fa-<?php echo hub_h($icon); ?>"></i></a>
+          <?php endforeach; ?>
         </div>
-        <a href="mailto:solutions@rxsource.com">solutions@rxsource.com</a>
+        <?php $companyEmail = hub_company_value('prefEmail'); if ($companyEmail !== ''): ?>
+          <a href="mailto:<?php echo hub_h($companyEmail); ?>"><?php echo hub_h($companyEmail); ?></a>
+        <?php endif; ?>
         <div class="portal-user-tools" aria-label="Account tools">
           <a class="portal-account-tool" href="/account.php" aria-label="Manage account">
             <?php if ($portalAccountImage !== ''): ?>
@@ -560,7 +558,7 @@ $portalHeaderAction = $portalIsDashboard
     </div>
     <div class="portal-footer-legal">
       <div class="portal-footer-legal-inner">
-        <p>&copy; <?php echo date('Y'); ?> RxSource. All rights reserved.</p>
+        <p>&copy; <?php echo date('Y'); ?> <?php echo hub_h(hub_company_value('prefCompanyName')); ?>. All rights reserved.</p>
         <nav aria-label="Legal policies">
           <a href="/privacy-policy.php">Privacy Policy</a>
           <a href="/cookie-policy.php">Cookie Policy</a>

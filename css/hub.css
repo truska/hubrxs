@@ -1268,6 +1268,28 @@ body.auth-page {
   gap: 36px;
 }
 
+.portal-footer-addresses > div,
+.portal-footer-contact {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.company-details-form .form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.company-details-form .form-grid > div {
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .company-details-form .form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .portal-footer strong {
   display: block;
   color: #ffffff;

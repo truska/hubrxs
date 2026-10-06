@@ -193,6 +193,15 @@ function hub_admin_tools_registry(): array {
       'sort' => 100,
     ],
     [
+      'key' => 'company_details',
+      'title' => 'Company Details',
+      'href' => '/admin/company-details.php',
+      'group' => 'content',
+      'minimum_role' => 'super_admin',
+      'lane' => 'internal',
+      'sort' => 150,
+    ],
+    [
       'key' => 'policy_pages',
       'title' => 'Pages',
       'href' => '/admin/content.php',
