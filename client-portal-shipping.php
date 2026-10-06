@@ -298,7 +298,7 @@ if (
         <div>
           <p class="brand">Shipping Report</p>
           <h1><?php echo hub_h($customerLabel); ?> Shipping</h1>
-          <p class="muted">Live SO Portal Lines filtered by internal customer ID.</p>
+          <!--<p class="muted">Live SO Portal Lines filtered by internal customer ID.</p>-->
         </div>
         <div class="links">
           <a href="/dashboard.php#proposals">Back to summary</a>

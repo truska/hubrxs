@@ -1013,6 +1013,32 @@ body.auth-page {
   gap: 30px;
 }
 
+/* Centre the contact content rather than two full-width empty columns. */
+.portal-key-information .portal-team-inner {
+  width: min(1100px, 100%);
+}
+
+.portal-key-information .portal-team-column,
+.portal-key-information .portal-team-copy,
+.portal-key-information .portal-team-contact-link {
+  min-width: 0;
+}
+
+.portal-key-information .portal-team-copy {
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 721px) {
+  .portal-key-information .portal-team-inner {
+    grid-template-columns: repeat(2, minmax(0, max-content));
+    justify-content: center;
+  }
+
+  .portal-key-information .portal-team-column:last-child:nth-child(2) {
+    grid-column: 1 / -1;
+  }
+}
+
 .portal-team-column h2 {
   margin: 0 0 -6px;
   color: #ffffff;
