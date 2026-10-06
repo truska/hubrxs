@@ -3,12 +3,14 @@ require_once __DIR__ . '/../includes/app/auth.php';
 require_once __DIR__ . '/../includes/app/admin_layout.php';
 require_once __DIR__ . '/../includes/app/import_sales_orders.php'; // for hub_table_exists etc.
 require_once __DIR__ . '/../includes/app/images.php';
+require_once __DIR__ . '/../includes/app/user_requests.php';
 hub_require_manager();
 
 $currentUser = hub_current_user();
 $canManageAllUsers = hub_can_manage_all_users($currentUser);
 $scopeCustomerId = $canManageAllUsers ? null : hub_effective_customer_id($currentUser);
 $isCompanyManager = !$canManageAllUsers;
+$canCreateLiveUsers = hub_is_super_admin();
 $headerActive = $canManageAllUsers ? 'admin' : 'manager';
 $sectionLabel = $canManageAllUsers ? 'Admin' : 'Manager';
 $backUrl = $canManageAllUsers ? '/admin.php' : '/manager.php';
@@ -142,8 +144,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && ($_POST['action'] ?? '') ==
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_user') {
-  if (!$canManageAllUsers) {
-    $error = 'Managers can request new users, but only admins can create them.';
+  if (!$canCreateLiveUsers) {
+    $error = 'Only Super Admins can create live users. Use the new user request form.';
   } elseif (!hub_verify_csrf($_POST['csrf'] ?? '')) {
     $error = 'Session expired. Please try again.';
   } else {
@@ -192,12 +194,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'request_user') {
-  if (!$isCompanyManager) {
-    $error = 'Only managers use the new user request form.';
+  $requestCustomerId = $isCompanyManager ? $scopeCustomerId : (int) ($_POST['customer_id'] ?? 0);
+  if ($canCreateLiveUsers) {
+    $error = 'Use the Super Admin new user form.';
   } elseif (!hub_verify_csrf($_POST['csrf'] ?? '')) {
     $error = 'Session expired. Please try again.';
-  } elseif ($scopeCustomerId === null || $scopeCustomerId <= 0) {
-    $error = 'Your account is not assigned to a customer.';
+  } elseif (!$DB_OK || !($pdo instanceof PDO)) {
+    $error = 'Database not available.';
+  } elseif (!$requestCustomerId || !in_array((int) $requestCustomerId, array_map('intval', array_column($customerOptions, 'id')), true)) {
+    $error = $isCompanyManager ? 'Your account is not assigned to an active customer.' : 'Select an active customer.';
   } else {
     $requestEmail = strtolower(trim((string) ($_POST['email'] ?? '')));
     $requestName = trim((string) ($_POST['display_name'] ?? ''));
@@ -205,19 +210,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $requestPhone = trim((string) ($_POST['phone'] ?? ''));
     $requestLinkedin = trim((string) ($_POST['linkedin'] ?? ''));
     $requestNotes = trim((string) ($_POST['notes'] ?? ''));
-    $adminEmail = trim((string) hub_pref('prefManagerEmail', ''));
-    if ($adminEmail === '') {
-      $adminEmail = trim((string) hub_pref('prefEmailFrom', ''));
-    }
+    $approvalRecipients = hub_user_approval_recipients();
 
     if ($requestEmail === '' || !filter_var($requestEmail, FILTER_VALIDATE_EMAIL)) {
       $error = 'A valid email address is required.';
-    } elseif ($adminEmail === '') {
-      $error = 'Admin email preference is not configured.';
+    } elseif (empty($approvalRecipients)) {
+      $error = 'No active Super Admin email addresses are available for approval. Please contact a Super Admin.';
     } else {
-      $customerLabel = 'Customer #' . (int) $scopeCustomerId;
+      $customerLabel = 'Customer #' . (int) $requestCustomerId;
       foreach ($customerOptions as $opt) {
-        if ((int) ($opt['id'] ?? 0) === (int) $scopeCustomerId) {
+        if ((int) ($opt['id'] ?? 0) === (int) $requestCustomerId) {
           $name = trim((string) ($opt['name'] ?? ''));
           $code = trim((string) ($opt['code'] ?? ''));
           $customerLabel = $name !== '' ? $name : ($code !== '' ? $code : $customerLabel);
@@ -230,44 +232,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
       $createErr = null;
       $temporaryPassword = bin2hex(random_bytes(12));
-      $newId = hub_create_user([
+      $newId = hub_create_pending_user([
         'email' => $requestEmail,
         'display_name' => $requestName,
         'job_title' => $requestTitle,
         'phone' => $requestPhone,
         'linkedin' => $requestLinkedin,
         'password' => $temporaryPassword,
-        'customer_id' => $scopeCustomerId,
+        'customer_id' => $requestCustomerId,
         'role' => 'user',
       ], $createErr);
 
       if (!$newId) {
         $error = $createErr ?: 'Unable to create pending user.';
       } else {
-        $stmtPending = $pdo->prepare(
-          'UPDATE hub_user
-           SET login_enabled = 0,
-               twofa_enabled = 1,
-               force_password_reset = 1,
-               modified = NOW()
-           WHERE id = :id
-           LIMIT 1'
-        );
-        $stmtPending->execute([':id' => $newId]);
         hub_log_user_action([
           'user' => $currentUser,
-          'action_key' => 'manager_user_requested',
-          'action_title' => 'Manager user requested',
+          'action_key' => $isCompanyManager ? 'manager_user_requested' : 'admin_user_requested',
+          'action_title' => $isCompanyManager ? 'Manager user requested' : 'Admin user requested',
           'table_name' => 'hub_user',
           'record_id' => $newId,
           'sql_text' => 'UPDATE hub_user SET login_enabled = 0, twofa_enabled = 1, force_password_reset = 1, modified = NOW() WHERE id = :id LIMIT 1',
-          'details' => ['target_email' => $requestEmail, 'customer_id' => $scopeCustomerId],
+          'details' => ['target_email' => $requestEmail, 'customer_id' => $requestCustomerId],
         ]);
 
         $requester = hub_admin_users_display_name($currentUser ?: []);
-        $message = 'Manager ' . $requester . ' created pending user ' . $requestEmail . ' for ' . $customerLabel . '. Verify the user details, then enable login when approved.';
+        $requesterRole = $isCompanyManager ? 'Manager' : 'Admin';
+        $message = $requesterRole . ' ' . $requester . ' created pending user ' . $requestEmail . ' for ' . $customerLabel . '. Verify the user details, then a Super Admin can enable login when approved.';
         if ($requestNotes !== '') {
-          $message .= "\n\nManager notes: " . $requestNotes;
+          $message .= "\n\nRequester notes: " . $requestNotes;
         }
 
         if (hub_table_exists('hub_admin_action')) {
@@ -294,24 +287,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             ':message' => $message,
             ':status' => 'open',
             ':priority' => 'normal',
-            ':source' => 'manager_users',
+            ':source' => $isCompanyManager ? 'manager_users' : 'admin_users',
           ]);
         }
 
         $subject = 'Verify new Hub user - ' . $customerLabel;
         $pendingUserLabel = $requestName !== '' ? $requestName . ' <' . $requestEmail . '>' : $requestEmail;
         $emailParagraphs = [
-          'A manager has created a pending Hub user for verification.',
+          ($isCompanyManager ? 'A manager' : 'An admin') . ' has created a pending Hub user for Super Admin approval.',
           'Pending user: ' . $pendingUserLabel . "\nCustomer: " . $customerLabel . ($requestLinkedin !== '' ? "\nLinkedIn: " . $requestLinkedin : ''),
           'Requested by: ' . $requester . "\nRequester email: " . (string) ($currentUser['email'] ?? ''),
-          'Login is disabled and 2FA is enabled. Please verify the user, then enable login if approved.',
+          'Login is disabled and 2FA is enabled. Only a Super Admin can enable login after verification. The user should then use Forgotten Password to set their own password.',
         ];
         if ($requestNotes !== '') {
-          $emailParagraphs[] = "Manager notes:\n" . $requestNotes;
+          $emailParagraphs[] = "Requester notes:\n" . $requestNotes;
         }
 
-        hub_send_template_email($adminEmail, $subject, 'Admin', $emailParagraphs, hub_base_url('/admin/users.php'), 'Review user');
-        hub_flash('success', 'Pending user created and sent for admin verification.');
+        $emailSent = hub_send_template_email(implode(', ', $approvalRecipients), $subject, 'Super Admins', $emailParagraphs, hub_base_url('/admin/users.php'), 'Review user');
+        hub_flash($emailSent ? 'success' : 'error', $emailSent ? 'Pending user created and sent for Super Admin approval.' : 'Pending user created, but the approval email could not be sent. Ask a Super Admin to review the user.');
         hub_redirect('/admin/users.php');
       }
     }
@@ -342,7 +335,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && in_array
         $error = 'You cannot assign a role above your own access level.';
       } elseif ($email !== '') {
         $stmtTarget = $pdo->prepare(
-          'SELECT u.id, u.email, u.display_name, u.customer_id, u.image, u.role, c.name AS customer_name, c.code AS customer_code
+          'SELECT u.id, u.email, u.display_name, u.customer_id, u.image, u.role, u.login_enabled, c.name AS customer_name, c.code AS customer_code
            FROM hub_user u
            LEFT JOIN hub_customer c ON c.id = u.customer_id
            WHERE u.id = :id AND u.archived = 0
@@ -354,6 +347,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && in_array
           $error = 'User not found.';
         } elseif (!hub_admin_users_can_assign_role((string) ($targetUser['role'] ?? 'user'))) {
           $error = 'You cannot edit a user above your own access level.';
+        }
+        if ($targetUser && !$canCreateLiveUsers) {
+          $role = (string) $targetUser['role'];
+          if ($loginEnabled === 1 && (int) $targetUser['login_enabled'] !== 1) {
+            $error = 'Only Super Admins can enable user login.';
+          }
         }
         $targetCustomer = null;
         foreach ($customerOptions as $opt) {
@@ -396,7 +395,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && in_array
                phone = :phone,
                linkedin = :linkedin,
                role = :role,
-               login_enabled = :login_enabled,
+               login_enabled = ' . ($canCreateLiveUsers ? ':login_enabled' : 'IF(login_enabled = 1, :login_enabled, 0)') . ',
                twofa_enabled = :twofa_enabled' . $imageSql . ',
                modified = NOW()
            WHERE id = :id
@@ -445,7 +444,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && in_array
       }
     } else {
       $stmtTarget = $pdo->prepare(
-        'SELECT u.id, u.email, u.display_name, u.customer_id, u.image, u.role, c.name AS customer_name, c.code AS customer_code
+        'SELECT u.id, u.email, u.display_name, u.customer_id, u.image, u.role, u.login_enabled, c.name AS customer_name, c.code AS customer_code
          FROM hub_user u
          LEFT JOIN hub_customer c ON c.id = u.customer_id
          WHERE u.id = :id AND u.customer_id = :customer_id AND u.archived = 0
@@ -833,12 +832,12 @@ if ($DB_OK && ($pdo instanceof PDO) && hub_table_exists('hub_user')) {
           <div>
             <p class="brand"><?php echo hub_h($sectionLabel); ?></p>
             <h1>Users</h1>
-            <p class="muted"><?php echo $canManageAllUsers ? 'Create users and attach them to customers.' : 'Manage users for your company and request new user setup.'; ?></p>
+            <p class="muted"><?php echo $canCreateLiveUsers ? 'Create users and attach them to customers.' : ($canManageAllUsers ? 'Select a customer and request Super Admin approval for new users.' : 'Manage users for your company and request new user setup.'); ?></p>
           </div>
           <div class="links">
             <a href="<?php echo hub_h($backUrl); ?>"><?php echo hub_h($backLabel); ?></a>
             <a href="/dashboard.php">Dashboard</a>
-            <?php if ($canManageAllUsers): ?>
+            <?php if ($canCreateLiveUsers): ?>
               <button id="new-user" type="button" data-open-modal="userAddModal">Add New User</button>
             <?php else: ?>
               <button id="new-user" type="button" data-open-modal="userRequestModal">Add New User</button>
@@ -1075,6 +1074,7 @@ if ($DB_OK && ($pdo instanceof PDO) && hub_table_exists('hub_user')) {
                     <p class="muted">Saves 1200px, 150px and 75px versions without enlarging smaller images.</p>
                   </div>
                   <?php if ($canManageAllUsers): ?>
+                    <?php if ($canCreateLiveUsers): ?>
                     <div>
                       <label for="edit_user_role_<?php echo (int) $usr['id']; ?>">Role</label>
                       <select id="edit_user_role_<?php echo (int) $usr['id']; ?>" name="role">
@@ -1084,6 +1084,7 @@ if ($DB_OK && ($pdo instanceof PDO) && hub_table_exists('hub_user')) {
                         <?php endforeach; ?>
                       </select>
                     </div>
+                    <?php endif; ?>
                     <div>
                       <label for="edit_user_customer_<?php echo (int) $usr['id']; ?>">Customer</label>
                       <select id="edit_user_customer_<?php echo (int) $usr['id']; ?>" name="customer_id">
@@ -1100,9 +1101,10 @@ if ($DB_OK && ($pdo instanceof PDO) && hub_table_exists('hub_user')) {
                       </select>
                     </div>
                     <div class="modal-checkbox-row">
-                      <label class="muted"><input type="checkbox" name="login_enabled" value="1" <?php echo ((int) ($usr['login_enabled'] ?? 0) === 1) ? 'checked' : ''; ?>> Login</label>
+                      <label class="muted"><input type="checkbox" name="login_enabled" value="1" <?php echo ((int) ($usr['login_enabled'] ?? 0) === 1) ? 'checked' : ''; ?> <?php echo !$canCreateLiveUsers && (int) ($usr['login_enabled'] ?? 0) !== 1 ? 'disabled' : ''; ?>> Login</label>
                       <label class="muted"><input type="checkbox" name="twofa_enabled" value="1" <?php echo ((int) ($usr['twofa_enabled'] ?? 0) === 1) ? 'checked' : ''; ?>> 2FA</label>
                     </div>
+                    <?php if (!$canCreateLiveUsers && (int) ($usr['login_enabled'] ?? 0) !== 1): ?><p class="muted">Only a Super Admin can enable login.</p><?php endif; ?>
                   <?php else: ?>
                     <div>
                       <label>Role</label>
@@ -1168,7 +1170,7 @@ if ($DB_OK && ($pdo instanceof PDO) && hub_table_exists('hub_user')) {
             <?php endif; ?>
           <?php endforeach; ?>
         <?php endif; ?>
-  <?php if ($canManageAllUsers): ?>
+  <?php if ($canCreateLiveUsers): ?>
   <div class="modal admin-entity-modal" id="userAddModal" aria-hidden="true">
     <div class="modal-content">
       <div class="modal-header">
@@ -1260,8 +1262,18 @@ if ($DB_OK && ($pdo instanceof PDO) && hub_table_exists('hub_user')) {
           <input id="request_user_job_title" name="job_title" type="text">
         </div>
         <div>
-          <label>Customer</label>
-          <input type="text" value="<?php echo hub_h($scopeCustomerLabel !== '' ? $scopeCustomerLabel : 'Not assigned'); ?>" readonly>
+          <?php if ($isCompanyManager): ?>
+            <label>Customer</label>
+            <input type="text" value="<?php echo hub_h($scopeCustomerLabel !== '' ? $scopeCustomerLabel : 'Not assigned'); ?>" readonly>
+          <?php else: ?>
+            <label for="request_user_customer_id">Customer *</label>
+            <select id="request_user_customer_id" name="customer_id" required>
+              <option value="">Select customer</option>
+              <?php foreach ($customerOptions as $opt): ?>
+                <option value="<?php echo (int) $opt['id']; ?>"><?php echo hub_h(trim((string) ($opt['name'] ?? '')) . ' (' . (string) ($opt['code'] ?? '') . ')'); ?></option>
+              <?php endforeach; ?>
+            </select>
+          <?php endif; ?>
         </div>
         <div>
           <label for="request_user_phone">Telephone</label>
@@ -1275,8 +1287,9 @@ if ($DB_OK && ($pdo instanceof PDO) && hub_table_exists('hub_user')) {
           <label for="request_user_notes">Notes</label>
           <textarea id="request_user_notes" name="notes" rows="4"></textarea>
         </div>
+        <p class="muted">Login stays disabled until a Super Admin approves the user. Once approved, the user sets their own password using Forgotten Password.</p>
         <div class="links" style="justify-content:flex-start;">
-          <button type="submit">Add User</button>
+          <button type="submit">Request User</button>
         </div>
       </form>
     </div>
@@ -1338,7 +1351,7 @@ if ($DB_OK && ($pdo instanceof PDO) && hub_table_exists('hub_user')) {
         });
       });
       if (window.location.hash === '#new-user') {
-        openModalById(<?php echo json_encode($canManageAllUsers ? 'userAddModal' : 'userRequestModal'); ?>);
+        openModalById(<?php echo json_encode($canCreateLiveUsers ? 'userAddModal' : 'userRequestModal'); ?>);
       }
     })();
   </script>
