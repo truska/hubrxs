@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/dev_tasks.php';
 
 function hub_admin_tool_groups(): array {
   return [
@@ -254,6 +255,15 @@ function hub_admin_tools_registry(): array {
       'minimum_role' => 'super_admin',
       'lane' => 'internal',
       'sort' => 50,
+    ],
+    [
+      'key' => 'dev_tasks',
+      'title' => 'Dev Tasks',
+      'href' => '/admin/dev-tasks.php',
+      'group' => 'tools',
+      'minimum_role' => hub_dev_task_minimum_role(),
+      'lane' => 'internal',
+      'sort' => 75,
     ],
     [
       'key' => 'dashboard_buttons',

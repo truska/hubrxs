@@ -4897,3 +4897,47 @@ body.portal-testimonials-page {
     font-size: 17px;
   }
 }
+
+/* Developer task tracker: shared conversation with a separate task note. */
+.dev-tasks-wrap { width: 100%; max-width: 1500px; margin: 0 auto; display: grid; gap: 20px; }
+.dev-task-status-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
+.dev-task-status-tabs a { padding: 9px 12px; border: 1px solid var(--hub-surface-border); border-radius: 7px; color: inherit; text-decoration: none; }
+.dev-task-status-tabs a.is-active { background: var(--rx-grey-dark); color: #fff; }
+.dev-task-status-tabs span { margin-left: 4px; font-size: .85em; }
+.dev-task-filters { display: grid; grid-template-columns: 2fr repeat(4, minmax(0, 1fr)); gap: 16px; align-items: end; }
+.dev-task-filters .links { grid-column: 1 / -1; justify-content: flex-start; }
+.dev-task-table-scroll { overflow-x: auto; }
+.dev-task-table { min-width: 1000px; }
+.dev-task-table td { vertical-align: top; }
+.dev-task-table td:first-child { min-width: 240px; max-width: 360px; overflow-wrap: anywhere; }
+.dev-task-table small { display: block; margin-top: 8px; }
+.dev-task-title { font-weight: 700; }
+.dev-task-badge { display: inline-block; border-radius: 6px; padding: 6px 9px; background: #e0e6e9; color: #26333b; font-size: 13px; white-space: nowrap; }
+.dev-task-badge.priority-1, .dev-task-badge.priority-2 { background: #fde4e6; color: #9d1825; }
+.dev-task-badge.status-open, .dev-task-badge.status-in_progress { background: #e1f2e8; color: #216440; }
+.dev-task-badge.status-completed { background: #e0edfa; color: #245585; }
+.dev-task-badge.status-future, .dev-task-badge.status-on_hold { background: #fff0cc; color: #785411; }
+.dev-task-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin: 20px 0; }
+.dev-task-name-field { grid-column: 1 / -1; }
+.dev-task-meta { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: center; overflow-wrap: anywhere; }
+.dev-task-detail-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); gap: 20px; align-items: start; }
+.dev-task-conversation { display: grid; gap: 16px; min-width: 0; }
+.dev-task-notes { min-width: 0; position: sticky; top: 20px; }
+.dev-task-notes textarea { min-height: 280px; margin-bottom: 16px; }
+.dev-task-comment-heading { display: flex; flex-wrap: wrap; gap: 8px 20px; justify-content: space-between; margin-bottom: 16px; }
+.dev-task-comment-heading time { font-size: 13px; color: var(--hub-surface-muted); }
+.dev-task-message { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+.dev-task-comment.dev-task-activity { border-left: 4px solid var(--rx-grey-mid); }
+.dev-task-image-link { display: block; margin-top: 18px; }
+.dev-task-image-link img { display: block; max-width: 100%; max-height: 500px; height: auto; border: 1px solid var(--hub-surface-border); border-radius: 8px; }
+.dev-tasks-page textarea { margin-bottom: 18px; }
+@media (max-width: 980px) {
+  .dev-task-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dev-task-detail-grid { grid-template-columns: minmax(0, 1fr); }
+  .dev-task-notes { position: static; grid-row: 1; }
+}
+@media (max-width: 620px) {
+  .dev-task-filters, .dev-task-fields { grid-template-columns: minmax(0, 1fr); }
+  .dev-task-status-tabs a { flex: 1 1 auto; text-align: center; }
+  .dev-task-meta { display: grid; gap: 12px; }
+}

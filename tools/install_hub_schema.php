@@ -680,6 +680,12 @@ $sql[] = "CREATE TABLE IF NOT EXISTS hub_import_fetch (
   CONSTRAINT fk_hub_import_fetch_user FOREIGN KEY (triggered_by) REFERENCES hub_user(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
 
+$devTaskSql = file_get_contents(__DIR__ . '/sql/2026-10-06-dev-tasks.sql');
+if ($devTaskSql === false) throw new RuntimeException('Dev Tasks schema file is missing.');
+foreach (explode(';', $devTaskSql) as $devTaskStatement) {
+  if (trim($devTaskStatement) !== '') $sql[] = $devTaskStatement;
+}
+
 foreach ($sql as $statement) {
   exec_sql($pdo, $statement);
 }
