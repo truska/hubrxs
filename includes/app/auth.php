@@ -1305,7 +1305,11 @@ function hub_create_user(array $data, string &$error = null): ?int {
     ]);
     return (int) $pdo->lastInsertId();
   } catch (PDOException $e) {
-    $error = 'Unable to create user: ' . $e->getMessage();
+    if ((int) ($e->errorInfo[1] ?? 0) === 1062 && str_contains($e->getMessage(), 'uq_hub_user_email')) {
+      $error = 'An account already exists with this email address. Please ask a Super Admin to review the existing account instead of creating a new one.';
+    } else {
+      $error = "We couldn't create this user. Please try again or contact a Super Admin.";
+    }
     return null;
   }
 }
