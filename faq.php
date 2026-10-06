@@ -5,8 +5,13 @@ hub_require_login();
 
 global $pdo, $DB_OK;
 
+$user = hub_current_user();
+$pageOptions = hub_faq_allowed_page_options($user);
 $pageFilter = hub_faq_normalise_page_key((string) ($_GET['page'] ?? ''));
-$allowedSections = hub_faq_allowed_sections(hub_current_user());
+if (!array_key_exists($pageFilter, $pageOptions)) {
+  $pageFilter = '';
+}
+$allowedSections = hub_faq_allowed_sections($user);
 $faqs = [];
 $error = null;
 
@@ -21,6 +26,14 @@ if (!$DB_OK || !($pdo instanceof PDO) || !hub_table_exists('hub_faq')) {
     $params[$key] = $section;
   }
   $where = 'show_on_web = 1 AND archived = 0 AND section IN (' . implode(',', $sectionPlaceholders) . ')';
+  $pagePlaceholders = [];
+  foreach (array_keys($pageOptions) as $index => $pageKey) {
+    if ($pageKey === '') continue;
+    $key = ':allowed_page' . $index;
+    $pagePlaceholders[] = $key;
+    $params[$key] = $pageKey;
+  }
+  $where .= ' AND (page_key IS NULL OR page_key = "" OR page_key IN (' . implode(',', $pagePlaceholders) . '))';
   if ($pageFilter !== '') {
     $where .= ' AND (page_key IS NULL OR page_key = "" OR page_key = :page_key)';
     $params[':page_key'] = $pageFilter;
@@ -103,7 +116,7 @@ if ($effectiveCustomerId && $DB_OK && ($pdo instanceof PDO) && hub_table_exists(
           <div>
             <label for="page">Page / report</label>
             <select id="page" name="page" onchange="this.form.submit()">
-              <?php foreach (hub_faq_page_options() as $key => $label): ?>
+              <?php foreach ($pageOptions as $key => $label): ?>
                 <option value="<?php echo hub_h($key); ?>" <?php echo $pageFilter === $key ? 'selected' : ''; ?>><?php echo hub_h($label); ?></option>
               <?php endforeach; ?>
             </select>

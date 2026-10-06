@@ -64,6 +64,32 @@ function hub_faq_page_label(string $pageKey): string {
   return $options[$pageKey] ?? ucwords(str_replace(['-', '_'], ' ', $pageKey));
 }
 
+/** Match the access guards on the pages covered by each help category. */
+function hub_faq_allowed_page_options(?array $user = null): array {
+  $minimumRoles = [
+    '' => 'user',
+    'dashboard' => 'user',
+    'shipping' => 'user',
+    'inventory' => 'user',
+    'so-lines' => 'user',
+    'manager' => 'manager',
+    'users' => 'manager',
+    'admin' => 'admin',
+    'imports' => 'admin',
+    'customers' => 'admin',
+    'projects' => 'admin',
+    'super' => 'super_admin',
+    'developer' => 'developer',
+  ];
+  $options = [];
+  foreach (hub_faq_page_options() as $key => $label) {
+    if (isset($minimumRoles[$key]) && hub_role_at_least($minimumRoles[$key], $user)) {
+      $options[$key] = $label;
+    }
+  }
+  return $options;
+}
+
 function hub_faq_normalise_page_key(string $pageKey): string {
   $pageKey = strtolower(trim($pageKey));
   $pageKey = preg_replace('/[^a-z0-9_-]+/', '-', $pageKey) ?: '';
