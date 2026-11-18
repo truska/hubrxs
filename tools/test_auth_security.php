@@ -203,6 +203,7 @@ try {
     eval('?>' . preg_replace('/^<\?php\s*require_once[^;]+;/', '<?php', file_get_contents(__DIR__ . '/../' . $page)));
     $html = ob_get_clean();
     auth_test_check(str_contains($html, 'data-auth-submit disabled') && str_contains($html, 'Too many attempts. Try again in') && str_contains($html, '/js/auth-cooldown.js'), 'Refresh renders disabled Sign in and cooldown on ' . $page);
+    auth_test_check(str_contains($html, '>Back to sign-in</a>') && !str_contains($html, '>Use another method</a>'), 'Clear return-to-email link on ' . $page);
   }
   // Seed only temporary counters to check longer IP windows and exact expiry.
   function auth_test_seed_limit(string $key, int $count, int $until): void {
@@ -250,6 +251,52 @@ try {
     foreach ($children as $pid) { pcntl_waitpid($pid,$status); if(pcntl_wexitstatus($status)===0) $allowed++; }
     auth_test_check($allowed===5, 'Concurrent requests cannot exceed a shared limit');
   }
+  // Simulate subsequent requests from existing sessions after account changes.
+  foreach (['user', 'admin'] as $offset => $role) {
+    $id = 90 + $offset;
+    $address = 'revoke-' . $role . '@example.invalid';
+    $pdo->prepare('INSERT INTO hub_user (id,email,password_hash,display_name,role,login_enabled,archived,twofa_enabled) VALUES (?, ?, ?, ?, ?, 1, 0, 0)')->execute([$id, $address, $hash, 'Revocation test', $role]);
+    hub_start_session(hub_find_user_by_email($address));
+    auth_test_check(hub_is_logged_in(), 'Active ' . $role . ' session still works');
+    $_SESSION['hub_customer_override'] = 123;
+    $_SESSION['hub_account_totp_setup'] = 1;
+    $_SESSION['hub_csrf'] = 'old-csrf';
+    $oldSession = $_SESSION; $oldId = session_id();
+    $pdo->exec('UPDATE hub_user SET archived = 1 WHERE id = ' . $id);
+    auth_test_check(hub_current_user() === null && $_SESSION === [], 'Archiving clears all ' . $role . ' session state');
+    auth_test_check(session_id() !== $oldId, 'Revoked ' . $role . ' session ID is rotated');
+    $_SESSION = $oldSession;
+    auth_test_check(!hub_is_logged_in() && !hub_is_admin(), 'Stale ' . $role . ' session cannot pass signed-in or role checks');
+    foreach (['hub_require_login', 'hub_require_admin', 'hub_require_manager', 'hub_require_super_admin', 'hub_require_developer'] as $guard) {
+      $_SESSION = $oldSession;
+      try { $guard(); throw new RuntimeException('Archived session passed ' . $guard); }
+      catch (AuthTestRedirect $redirect) { auth_test_check($redirect->getMessage() === '/index.php?login=1', 'Archived ' . $role . ' session rejected by ' . $guard); }
+    }
+    $pdo->exec('UPDATE hub_user SET archived = 0 WHERE id = ' . $id);
+    auth_test_check(!hub_is_logged_in(), 'Unarchiving does not restore a cleared ' . $role . ' session');
+  }
+  $active = hub_find_user_by_email('revoke-admin@example.invalid');
+  hub_start_session($active);
+  $pdo->exec("UPDATE hub_user SET role = 'user' WHERE id = 91");
+  auth_test_check(!hub_is_admin() && hub_current_user()['role'] === 'user', 'Role changes replace stale cached privileges');
+  $pdo->exec('UPDATE hub_user SET login_enabled = 0 WHERE id = 91');
+  auth_test_check(!hub_is_logged_in() && $_SESSION === [], 'Disabling an account revokes an existing session');
+  $pdo->exec('UPDATE hub_user SET login_enabled = 1 WHERE id = 91');
+  hub_start_session(hub_find_user_by_email('revoke-admin@example.invalid'));
+  $cachedSession = $_SESSION;
+  $DB_OK = false;
+  auth_test_check(!hub_is_logged_in() && $_SESSION === [], 'Unavailable database cannot authorize cached identity');
+  $DB_OK = true;
+  $_SESSION = $cachedSession;
+  $pdo->exec('ALTER TABLE hub_user RENAME TO hub_user_unavailable');
+  auth_test_check(!hub_is_logged_in() && $_SESSION === [], 'Database query failure clears cached authentication');
+  $pdo->exec('ALTER TABLE hub_user_unavailable RENAME TO hub_user');
+  $_SESSION = $cachedSession;
+  $pdo->exec('DELETE FROM hub_user WHERE id = 91');
+  auth_test_check(!hub_is_logged_in() && $_SESSION === [], 'Deleted account cannot retain a session');
+  $_SESSION[HUB_PENDING_2FA_KEY] = ['user_id' => 90, 'email' => 'revoke-user@example.invalid', 'primary_verified' => true, 'created_at' => time(), 'method' => 'email'];
+  $pdo->exec('UPDATE hub_user SET archived = 1 WHERE id = 90');
+  auth_test_check(hub_pending_twofa_user() === null && !isset($_SESSION[HUB_PENDING_2FA_KEY]), 'Archiving also clears pending verification');
   session_destroy();
   echo 'PASS: ' . count($checks) . " isolated authentication checks; no production DB writes, email or external requests.\n";
 } finally {

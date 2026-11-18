@@ -6,37 +6,50 @@ function hub_schema_ready(): bool {
   return hub_table_exists('hub_user') && hub_table_exists('hub_customer');
 }
 
+/** Clear authentication without querying the account or writing an audit log. */
+function hub_clear_auth_session(): void {
+  $_SESSION = [];
+  if (session_status() === PHP_SESSION_ACTIVE) {
+    session_regenerate_id(true);
+  }
+}
+
 function hub_current_user(): ?array {
   if (!isset($_SESSION[HUB_SESSION_KEY]['id'])) {
     return null;
   }
 
   global $pdo, $DB_OK;
-
-  if ($DB_OK && ($pdo instanceof PDO)) {
-    try {
-      $stmt = $pdo->prepare('SELECT id, email, display_name, customer_id, role FROM hub_user WHERE id = :id AND archived = 0 LIMIT 1');
-      $stmt->execute([':id' => (int) $_SESSION[HUB_SESSION_KEY]['id']]);
-      $user = $stmt->fetch(PDO::FETCH_ASSOC);
-      if ($user) {
-        $_SESSION[HUB_SESSION_KEY] = [
-          'id' => (int) $user['id'],
-          'email' => (string) $user['email'],
-          'display_name' => (string) ($user['display_name'] ?? ''),
-          'customer_id' => isset($user['customer_id']) ? (int) $user['customer_id'] : null,
-          'role' => (string) ($user['role'] ?? 'user'),
-        ];
-      }
-    } catch (PDOException $e) {
-      return $_SESSION[HUB_SESSION_KEY];
-    }
+  if (!$DB_OK || !($pdo instanceof PDO)) {
+    hub_clear_auth_session();
+    return null;
   }
-
-  return $_SESSION[HUB_SESSION_KEY];
+  try {
+    // Every access check revalidates the account; cached identity is not proof.
+    $stmt = $pdo->prepare('SELECT id, email, display_name, customer_id, role FROM hub_user WHERE id = :id AND archived = 0 AND login_enabled = 1 LIMIT 1');
+    $stmt->execute([':id' => (int) $_SESSION[HUB_SESSION_KEY]['id']]);
+    $user = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$user) {
+      hub_clear_auth_session();
+      return null;
+    }
+    $_SESSION[HUB_SESSION_KEY] = [
+      'id' => (int) $user['id'],
+      'email' => (string) $user['email'],
+      'display_name' => (string) ($user['display_name'] ?? ''),
+      'customer_id' => isset($user['customer_id']) ? (int) $user['customer_id'] : null,
+      'role' => (string) ($user['role'] ?? 'user'),
+    ];
+    return $_SESSION[HUB_SESSION_KEY];
+  } catch (PDOException $e) {
+    error_log('Hub session account validation failed; authentication cleared.');
+    hub_clear_auth_session();
+    return null;
+  }
 }
 
 function hub_is_logged_in(): bool {
-  return isset($_SESSION[HUB_SESSION_KEY]['id']);
+  return hub_current_user() !== null;
 }
 
 function hub_role_hierarchy(): array {
@@ -53,7 +66,7 @@ function hub_role_key(?array $user = null): string {
   if ($user === null) {
     $user = hub_current_user();
   }
-  $role = trim((string) ($user['role'] ?? ($_SESSION[HUB_SESSION_KEY]['role'] ?? 'user')));
+  $role = trim((string) ($user['role'] ?? 'user'));
   return $role !== '' ? $role : 'user';
 }
 
@@ -384,7 +397,7 @@ function hub_effective_customer_id(?array $user): ?int {
 
 function hub_require_login(): void {
   if (!hub_is_logged_in()) {
-    hub_redirect('index.php?login=1');
+    hub_redirect('/index.php?login=1');
   }
 }
 
@@ -400,8 +413,7 @@ function hub_logout(): void {
       'details' => ['method' => 'Logout'],
     ]);
   }
-  unset($_SESSION[HUB_SESSION_KEY], $_SESSION[HUB_PENDING_2FA_KEY], $_SESSION['hub_totp_login'], $_SESSION['hub_login_email'], $_SESSION['hub_customer_override']);
-  session_regenerate_id(true);
+  hub_clear_auth_session();
 }
 
 function hub_find_user_by_email(string $email): ?array {
@@ -562,20 +574,23 @@ function hub_create_twofa_challenge(array $user, string &$error = null): bool {
 function hub_pending_twofa_user(): ?array {
   global $pdo, $DB_OK;
   $pending = $_SESSION[HUB_PENDING_2FA_KEY] ?? null;
-  if (!$pending || !isset($pending['user_id']) || empty($pending['primary_verified']) || (int) ($pending['created_at'] ?? 0) < time() - 600) {
-    return null;
-  }
-  if (!$DB_OK || !($pdo instanceof PDO)) {
+  if (!$pending || !isset($pending['user_id']) || empty($pending['primary_verified']) || (int) ($pending['created_at'] ?? 0) < time() - 600
+      || !$DB_OK || !($pdo instanceof PDO)) {
+    unset($_SESSION[HUB_PENDING_2FA_KEY]);
     return null;
   }
   try {
-    $stmt = $pdo->prepare('SELECT * FROM hub_user WHERE id = :id AND archived = 0 LIMIT 1');
+    $stmt = $pdo->prepare('SELECT * FROM hub_user WHERE id = :id AND archived = 0 AND login_enabled = 1 LIMIT 1');
     $stmt->execute([':id' => (int) $pending['user_id']]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
-    return $row && (int) ($row['login_enabled'] ?? 1) === 1 ? $row : null;
+    if ($row) {
+      return $row;
+    }
   } catch (PDOException $e) {
-    return null;
+    error_log('Hub pending sign-in account validation failed.');
   }
+  unset($_SESSION[HUB_PENDING_2FA_KEY]);
+  return null;
 }
 
 function hub_verify_twofa_code(int $userId, string $code, string &$error = null): bool {

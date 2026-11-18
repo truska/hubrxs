@@ -84,7 +84,7 @@ $messages = hub_flash_messages();
         <button class="but1" type="submit" data-auth-submit<?php echo $retryAfter > 0 ? ' disabled' : ''; ?>>Sign in</button>
         <div class="links auth-secondary-actions">
           <a class="but3" href="forgot-password.php?email=<?php echo rawurlencode($email); ?>">Forgot Password</a>
-          <a class="but3" href="index.php">Use another method</a>
+          <a class="but3" href="index.php">Back to sign-in</a>
         </div>
       </form>
     </div>

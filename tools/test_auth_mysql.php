@@ -58,6 +58,28 @@ try {
   $_SESSION['hub_totp_login']['created_at'] = time() - 601;
   $freshCode = hub_totp_code_for_counter($setup['secret'], (int) floor(time()/30) + 1);
   auth_mysql_check(!hub_complete_totp_login($freshCode, $error) && !hub_is_logged_in(), 'Expired direct app-login attempt rejected');
+  // An already-established session must be rejected on its next access check.
+  $pdo->prepare('INSERT INTO hub_user (id,email,password_hash,display_name,role,login_enabled,archived,twofa_enabled) VALUES (900002, ?, ?, ?, ?, 1, 0, 0)')->execute(['session-test@example.invalid', password_hash('unused', PASSWORD_DEFAULT), 'Session test', 'admin']);
+  hub_start_session(hub_find_user_by_email('session-test@example.invalid'));
+  auth_mysql_check(hub_is_logged_in() && hub_is_admin(), 'Active MySQL session and admin privileges work');
+  $oldSession = $_SESSION; $oldId = session_id();
+  $_SESSION['hub_customer_override'] = 1; $_SESSION['hub_account_totp_setup'] = 1;
+  $pdo->exec('UPDATE hub_user SET archived = 1 WHERE id = 900002');
+  auth_mysql_check(!hub_is_logged_in() && $_SESSION === [] && session_id() !== $oldId, 'Archiving revokes established MySQL session and rotates its ID');
+  $_SESSION = $oldSession;
+  auth_mysql_check(hub_current_user() === null && !hub_is_admin(), 'Cached MySQL admin identity cannot survive archiving');
+  $pdo->exec('UPDATE hub_user SET archived = 0 WHERE id = 900002');
+  auth_mysql_check(!hub_is_logged_in(), 'Cleared session stays signed out after account restoration');
+  hub_start_session(hub_find_user_by_email('session-test@example.invalid'));
+  $pdo->exec('UPDATE hub_user SET login_enabled = 0 WHERE id = 900002');
+  auth_mysql_check(!hub_is_logged_in() && $_SESSION === [], 'Disabling MySQL login revokes existing session');
+  $pdo->exec('UPDATE hub_user SET login_enabled = 1 WHERE id = 900002');
+  hub_start_session(hub_find_user_by_email('session-test@example.invalid'));
+  $pdo->exec('DELETE FROM hub_user WHERE id = 900002');
+  auth_mysql_check(!hub_is_logged_in(), 'Deleting MySQL account revokes existing session');
+  $_SESSION[HUB_PENDING_2FA_KEY] = ['user_id' => 900001, 'email' => 'auth-test@example.invalid', 'primary_verified' => true, 'created_at' => time(), 'method' => 'email'];
+  $pdo->exec('UPDATE hub_user SET archived = 1 WHERE id = 900001');
+  auth_mysql_check(hub_pending_twofa_user() === null && !isset($_SESSION[HUB_PENDING_2FA_KEY]), 'Archived MySQL account cannot finish pending verification');
   echo 'PASS: ' . count($checks) . " MySQL authentication checks using temporary tables only; no emails or external requests.\n";
 } finally {
   foreach (['hub_user', 'hub_user_totp', 'hub_user_twofa', 'hub_user_action_log'] as $table) $pdo->exec('DROP TEMPORARY TABLE IF EXISTS `' . $table . '`');

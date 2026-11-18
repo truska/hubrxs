@@ -254,3 +254,39 @@ corrupt storage. `node tools/test_auth_cooldown.js` passed 9 checks for button
 state, minute updates, Enter submission, exact expiry and back/forward restoration.
 The existing 18 temporary-table MySQL authentication checks also passed, and a
 read-only development Apache request served the new script byte-for-byte.
+
+## Follow-up: archived-account session revocation and return link
+
+The password and authenticator pages now label the return-to-email link
+**Back to sign-in**. It remains available during credential cooldowns.
+
+Session identity and role checks now re-query the account and require
+`archived = 0` and `login_enabled = 1`. An archived, disabled or deleted account
+loses access on its next authenticated request/check, even if its browser still
+has an older signed-in cookie. Revocation clears all session state (including
+customer overrides, enrollment state, pending verification and CSRF data) and
+rotates the session ID. Protected routes redirect to `/index.php?login=1`.
+Role checks cannot fall back to the old role in the session. Pending verification
+also clears when the account is no longer eligible. A page already downloaded
+cannot be withdrawn; subsequent requests for pages, reports or actions are denied.
+
+If the database is unavailable or the account query fails, authentication fails
+closed and the cached session is cleared. Users must sign in again after service
+is restored. No database migration, session-store purge or new server setting is
+needed; deploy the updated auth library and the two login page templates.
+
+Validation passed: 166 isolated checks, 25 temporary-table MySQL checks, 9 browser
+script unit checks, PHP lint and git diff --check. New tests cover existing normal
+and administrator sessions, every login/role guard, session ID rotation and state
+cleanup, role changes, archived/disabled/deleted accounts, pending verification,
+and database unavailability/query errors. No real accounts or audit records were
+changed, and no email or external service requests were made by these tests.
+
+Post-deployment functional check (authorized disposable test account): sign in in
+one browser and archive that account from a separate administrator browser. In
+the first browser, request a protected page/report and, for an administrator test
+account, an admin route: each must return to sign-in without protected content.
+Confirm restoring the test account after that rejection does not restore the
+cleared session; fresh sign-in is required. Repeat for login-disabled status and
+for a login paused at additional verification. Restore the disposable account's
+intended status when finished. Use test accounts, not real user sessions.
