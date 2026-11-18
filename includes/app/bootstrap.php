@@ -185,7 +185,7 @@ function hub_email_html(string $recipientName, array $paragraphs, ?string $link 
   if ($link !== null && trim($link) !== '') {
     $safeLink = hub_h($link);
     $safeButton = hub_h($buttonLabel);
-    $body .= '<table role="presentation" cellspacing="0" cellpadding="0" style="margin:22px 0;"><tr><td bgcolor="#ed1b2f" style="border-radius:6px;background:#ed1b2f;padding:15px 26px;"><a href="' . $safeLink . '" style="display:inline-block;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;line-height:1.2;">' . $safeButton . '</a></td></tr></table>';
+    $body .= '<table role="presentation" cellspacing="0" cellpadding="0" style="margin:22px 0;"><tr><td bgcolor="#ed1b2f" style="border-radius:6px;background:#ed1b2f;padding:15px 26px;"><a href="' . $safeLink . '" style="display:inline-block;color:#ffffff;text-decoration:none;font-weight:400;font-size:15px;line-height:1.2;">' . $safeButton . '</a></td></tr></table>';
     $body .= '<p style="margin:0 0 16px;color:#53636c;font-size:14px;line-height:1.5;">If the button does not work, copy and paste this link into your browser:<br><a href="' . $safeLink . '" style="color:#ed1b2f;word-break:break-all;">' . $safeLink . '</a></p>';
   }
   $body .= '<p style="margin:24px 0 10px;color:#26333b;font-size:16px;line-height:1.55;">Regards<br>RX Source Hub Team</p>';

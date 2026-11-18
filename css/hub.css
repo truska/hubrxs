@@ -4950,3 +4950,44 @@ body.portal-testimonials-page {
   .dev-task-meta { display: grid; gap: 12px; }
   .dev-task-record-count { margin-left: 0; }
 }
+
+
+/* Global button typography: regular text, including nested labels and disabled
+   controls. This policy overrides older component weights and inline rules.
+   Future individual exceptions can set --hub-button-font-weight on the control.
+   Font Awesome glyphs keep their required icon weight. */
+:root {
+  --hub-button-font-weight: 400;
+}
+
+:is(button,
+input[type="button"],
+input[type="submit"],
+input[type="reset"],
+[role="button"],
+.but1, .but2, .but3, .but4, .main-action,
+.links a, .disabled-action,
+.admin-header-nav a, .portal-header-actions a,
+.portal-admin-link, .portal-website-link,
+.portal-user-action-link, .portal-team-button,
+.portal-announcement-link, .portal-announcement-more, .portal-announcement-reveal,
+.portal-account-tool, .portal-dashboard-tile, .portal-proposal-status-card,
+.portal-news-card, .content-page-link, .help-trigger, .icon-action) {
+  font-weight: var(--hub-button-font-weight) !important;
+}
+
+:is(button,
+input[type="button"],
+input[type="submit"],
+input[type="reset"],
+[role="button"],
+.but1, .but2, .but3, .but4, .main-action,
+.links a, .disabled-action,
+.admin-header-nav a, .portal-header-actions a,
+.portal-admin-link, .portal-website-link,
+.portal-user-action-link, .portal-team-button,
+.portal-announcement-link, .portal-announcement-more, .portal-announcement-reveal,
+.portal-account-tool, .portal-dashboard-tile, .portal-proposal-status-card,
+.portal-news-card, .content-page-link, .help-trigger, .icon-action) :where(span, strong, b, small, em, p, div, label, h1, h2, h3, h4):not([class*="fa-"]) {
+  font-weight: inherit !important;
+}
