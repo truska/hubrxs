@@ -719,7 +719,7 @@ body.auth-page {
   background: var(--rx-grey-dark);
   color: #ffffff;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 500;
   line-height: 1.2;
   display: inline-flex;
   align-items: center;
@@ -1139,7 +1139,7 @@ body.auth-page {
   border-radius: 5px;
   background: var(--rx-red);
   color: #ffffff;
-  font-weight: 700;
+  font-weight: 500;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1472,7 +1472,7 @@ button {
   border-radius: 10px;
   border: none;
   font-size: 15px;
-  font-weight: 700;
+  font-weight: 500;
   color: #0b1015;
   background: linear-gradient(120deg, var(--accent), #5ac8f5);
   cursor: pointer;
@@ -2760,7 +2760,7 @@ body.admin-page {
   background: var(--hub-action-bg);
   color: var(--hub-action-text);
   font-size: 14px;
-  font-weight: 800;
+  font-weight: 500;
   line-height: 1.1;
   text-decoration: none;
   box-shadow: var(--hub-action-shadow);
@@ -3535,7 +3535,7 @@ body.portal-dashboard-page .portal-dashboard-tile-marketing {
   background: var(--hub-action-bg);
   color: var(--hub-action-text);
   font-size: 14px;
-  font-weight: 800;
+  font-weight: 500;
   line-height: 1.1;
   box-shadow: var(--hub-action-shadow);
 }
