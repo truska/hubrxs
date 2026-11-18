@@ -68,18 +68,72 @@ function hub_auth_consume_bucket(string $directory, string $key, int $limit, int
   }
 }
 
-function hub_auth_rate_limit(string $action, string $email): bool {
-  $limits = [
+function hub_auth_limits(): array {
+  return [
     'continue' => [30, 120],
     'login' => [10, 100],
     'mail' => [3, 20],
   ];
+}
+
+function hub_auth_rate_limit_dir(): string {
+  return PHP_SAPI === 'cli' && defined('HUB_AUTH_RATE_LIMIT_DIR')
+    ? HUB_AUTH_RATE_LIMIT_DIR
+    : dirname(__DIR__, 3) . '/private/auth-rate-limits';
+}
+
+/** Read only: opening/refreshing a form must not consume or extend its limits. */
+function hub_auth_bucket_retry_after(string $directory, string $key, int $limit): int {
+  $hash = hash('sha256', $key);
+  $file = $directory . '/' . (hexdec(substr($hash, 0, 2)) % 64) . '.json';
+  if (!file_exists($file)) {
+    return 0;
+  }
+  $handle = @fopen($file, 'rb');
+  if (!$handle) {
+    return 900;
+  }
+  try {
+    if (!flock($handle, LOCK_SH)) {
+      return 900;
+    }
+    $raw = stream_get_contents($handle, 1048577);
+    if ($raw === false || strlen($raw) > 1048576) {
+      return 900;
+    }
+    $entries = $raw === '' ? [] : json_decode($raw, true);
+    if (!is_array($entries)) {
+      return 900;
+    }
+    $entry = $entries[$hash] ?? null;
+    if ($entry === null) {
+      return 0;
+    }
+    if (!is_array($entry) || !isset($entry['count'], $entry['until'])) {
+      return 900;
+    }
+    return $entry['count'] >= $limit ? max(0, (int) $entry['until'] - time()) : 0;
+  } finally {
+    flock($handle, LOCK_UN);
+    fclose($handle);
+  }
+}
+
+function hub_auth_login_retry_after(string $email): int {
+  [$addressLimit, $ipLimit] = hub_auth_limits()['login'];
+  $directory = hub_auth_rate_limit_dir();
+  return max(
+    hub_auth_bucket_retry_after($directory, 'login:email:' . strtolower(trim($email)), $addressLimit),
+    hub_auth_bucket_retry_after($directory, 'login:ip:' . hub_auth_client_ip(), $ipLimit)
+  );
+}
+
+function hub_auth_rate_limit(string $action, string $email): bool {
+  $limits = hub_auth_limits();
   if (!isset($limits[$action])) {
     throw new InvalidArgumentException('Unknown authentication limit.');
   }
-  $directory = PHP_SAPI === 'cli' && defined('HUB_AUTH_RATE_LIMIT_DIR')
-    ? HUB_AUTH_RATE_LIMIT_DIR
-    : dirname(__DIR__, 3) . '/private/auth-rate-limits';
+  $directory = hub_auth_rate_limit_dir();
   if (!is_dir($directory) && !@mkdir($directory, 0770, true) && !is_dir($directory)) {
     error_log('Hub authentication rate-limit storage unavailable.');
     return false;

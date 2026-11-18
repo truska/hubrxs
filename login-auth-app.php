@@ -16,6 +16,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     hub_redirect('dashboard.php');
   }
 }
+$retryAfter = hub_auth_login_retry_after($email);
 $messages = hub_flash_messages();
 ?>
 <!DOCTYPE html>
@@ -41,23 +42,25 @@ $messages = hub_flash_messages();
       <?php foreach ($messages as $msg): ?>
         <div class="alert <?php echo hub_h($msg['type']); ?>"><?php echo hub_h($msg['message']); ?></div>
       <?php endforeach; ?>
-      <?php if ($error): ?>
+      <?php if ($error && $retryAfter === 0): ?>
         <div class="alert error"><?php echo hub_h($error); ?></div>
       <?php endif; ?>
 
-      <form method="post" action="login-auth-app.php">
+      <form method="post" action="login-auth-app.php" data-auth-cooldown="<?php echo $retryAfter; ?>">
+        <div class="alert info" data-auth-cooldown-message role="status"<?php echo $retryAfter > 0 ? '' : ' hidden'; ?>><?php if ($retryAfter > 0): ?>Too many attempts. Try again in <?php echo (int) ceil($retryAfter / 60); ?> minute<?php echo $retryAfter > 60 ? 's' : ''; ?>.<?php endif; ?></div>
         <input type="hidden" name="csrf" value="<?php echo hub_h(hub_csrf_token()); ?>">
         <input type="hidden" name="email" value="<?php echo hub_h($email); ?>">
         <div>
           <label for="code">Code</label>
           <input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required>
         </div>
-        <button class="but1" type="submit">Sign in</button>
+        <button class="but1" type="submit" data-auth-submit<?php echo $retryAfter > 0 ? ' disabled' : ''; ?>>Sign in</button>
         <div class="links auth-secondary-actions">
           <a class="but3" href="index.php">Use another method</a>
         </div>
       </form>
     </div>
   </div>
+  <script src="/js/auth-cooldown.js?v=20261118-1"></script>
 </body>
 </html>

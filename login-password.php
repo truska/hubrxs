@@ -35,6 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   }
 }
 
+$retryAfter = hub_auth_login_retry_after($email);
 $messages = hub_flash_messages();
 ?>
 <!DOCTYPE html>
@@ -60,11 +61,12 @@ $messages = hub_flash_messages();
       <?php foreach ($messages as $msg): ?>
         <div class="alert <?php echo hub_h($msg['type']); ?>"><?php echo hub_h($msg['message']); ?></div>
       <?php endforeach; ?>
-      <?php if ($error): ?>
+      <?php if ($error && $retryAfter === 0): ?>
         <div class="alert error"><?php echo hub_h($error); ?></div>
       <?php endif; ?>
 
-      <form method="post" action="login-password.php">
+      <form method="post" action="login-password.php" data-auth-cooldown="<?php echo $retryAfter; ?>">
+        <div class="alert info" data-auth-cooldown-message role="status"<?php echo $retryAfter > 0 ? '' : ' hidden'; ?>><?php if ($retryAfter > 0): ?>Too many attempts. Try again in <?php echo (int) ceil($retryAfter / 60); ?> minute<?php echo $retryAfter > 60 ? 's' : ''; ?>.<?php endif; ?></div>
         <input type="hidden" name="csrf" value="<?php echo hub_h(hub_csrf_token()); ?>">
         <input type="hidden" name="email" value="<?php echo hub_h($email); ?>">
         <div>
@@ -79,7 +81,7 @@ $messages = hub_flash_messages();
             </button>
           </div>
         </div>
-        <button class="but1" type="submit">Sign in</button>
+        <button class="but1" type="submit" data-auth-submit<?php echo $retryAfter > 0 ? ' disabled' : ''; ?>>Sign in</button>
         <div class="links auth-secondary-actions">
           <a class="but3" href="forgot-password.php?email=<?php echo rawurlencode($email); ?>">Forgot Password</a>
           <a class="but3" href="index.php">Use another method</a>
@@ -88,5 +90,6 @@ $messages = hub_flash_messages();
     </div>
   </div>
   <script src="/js/hub.js?v=20260622-password-reveal"></script>
+  <script src="/js/auth-cooldown.js?v=20261118-1"></script>
 </body>
 </html>

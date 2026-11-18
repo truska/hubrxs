@@ -224,3 +224,33 @@ additional verification, and logout. Confirm counters survive a new browser
 session and expire; use dedicated test identities/IPs to avoid disrupting users.
 Do not automate repeated attempts against real users. Review private logs for
 storage/FPM/delivery failures without exposing operational details in the UI.
+
+## Follow-up: disabled Sign in during the credential cooldown
+
+Deploy the updated `includes/app/auth_security.php`, `login-password.php`,
+`login-auth-app.php` and the new public `js/auth-cooldown.js` together. No database
+migration, server configuration change or new private directory is required.
+The script must be publicly readable (0664, matching `js/hub.js`).
+
+Password and authenticator Sign in forms render a disabled submit button once the
+address or IP credential budget is exhausted, including immediately after the
+last allowed unsuccessful attempt. The message shows the remaining wait rounded
+up to minutes. The longer of the applicable address/IP windows controls the
+cooldown. Refresh reads the existing counters without consuming an attempt or
+extending the window. The button automatically enables after that snapshot's
+expiry; if JavaScript is disabled, refresh after the displayed wait.
+
+This is a usability aid only. The original limits, session independence, expiry,
+credential validation and server-side enforcement are unchanged. Removing the
+button's disabled attribute, altering the browser clock or submitting directly
+cannot bypass the server. If activity in another browser exhausts a newer window,
+the next server submission still checks that window. No account lookup is made to
+show the cooldown; registered and unknown addresses follow the same rules.
+
+Validation: `php8.4 tools/test_auth_security.php` passed 138 isolated checks,
+including read-only cooldown persistence, server enforcement when UI is bypassed,
+server-rendered disabled buttons on both forms, longer IP windows, expiry and
+corrupt storage. `node tools/test_auth_cooldown.js` passed 9 checks for button
+state, minute updates, Enter submission, exact expiry and back/forward restoration.
+The existing 18 temporary-table MySQL authentication checks also passed, and a
+read-only development Apache request served the new script byte-for-byte.

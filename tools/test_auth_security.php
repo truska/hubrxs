@@ -188,6 +188,39 @@ try {
   auth_test_check(!hub_auth_rate_limit('login', 'LIMITED@example.invalid'), 'Address limit survives session reset and case changes');
   $_SERVER['REMOTE_ADDR'] = '198.51.100.3';
   auth_test_check(!hub_auth_rate_limit('login', 'limited@example.invalid'), 'Address limit survives IP change');
+  $retry = hub_auth_login_retry_after('limited@example.invalid');
+  auth_test_check($retry > 0 && $retry <= 900, 'Cooldown reports the remaining server window');
+  $snapshots = [];
+  foreach (glob(HUB_AUTH_RATE_LIMIT_DIR . '/*.json') as $path) $snapshots[$path] = file_get_contents($path);
+  $_SESSION = [];
+  hub_auth_login_retry_after('LIMITED@example.invalid');
+  foreach ($snapshots as $path => $contents) auth_test_check(file_get_contents($path) === $contents, 'Reading cooldown does not consume or extend a counter');
+  auth_test_check(hub_login_with_password('limited@example.invalid', 'correct-password', $error) === 'error' && $error === 'Too many attempts. Please try again later.', 'Submitting directly still enforces server limit');
+  foreach (['login-password.php', 'login-auth-app.php'] as $page) {
+    $_SESSION = ['hub_login_email' => 'limited@example.invalid', 'hub_totp_login' => ['email' => 'limited@example.invalid', 'created_at' => time()]];
+    $_SERVER['REQUEST_METHOD'] = 'GET'; $_POST = []; $_GET = [];
+    ob_start();
+    eval('?>' . preg_replace('/^<\?php\s*require_once[^;]+;/', '<?php', file_get_contents(__DIR__ . '/../' . $page)));
+    $html = ob_get_clean();
+    auth_test_check(str_contains($html, 'data-auth-submit disabled') && str_contains($html, 'Too many attempts. Try again in') && str_contains($html, '/js/auth-cooldown.js'), 'Refresh renders disabled Sign in and cooldown on ' . $page);
+  }
+  // Seed only temporary counters to check longer IP windows and exact expiry.
+  function auth_test_seed_limit(string $key, int $count, int $until): void {
+    $hash = hash('sha256', $key);
+    $path = HUB_AUTH_RATE_LIMIT_DIR . '/' . (hexdec(substr($hash,0,2)) % 64) . '.json';
+    $entries = file_exists($path) ? json_decode(file_get_contents($path), true) : [];
+    $entries[$hash] = ['count' => $count, 'until' => $until];
+    file_put_contents($path, json_encode($entries));
+  }
+  auth_test_seed_limit('login:email:cooldown@example.invalid', 10, time() + 60);
+  auth_test_seed_limit('login:ip:198.51.100.3', 100, time() + 300);
+  $retry = hub_auth_login_retry_after('cooldown@example.invalid');
+  auth_test_check($retry >= 299 && $retry <= 300, 'Longer IP cooldown controls re-enable time');
+  auth_test_seed_limit('login:email:cooldown@example.invalid', 10, time() - 1);
+  auth_test_seed_limit('login:ip:198.51.100.3', 100, time() - 1);
+  auth_test_check(hub_auth_login_retry_after('cooldown@example.invalid') === 0, 'Expired cooldown enables fresh attempts');
+  auth_test_check(hub_auth_rate_limit('login', 'cooldown@example.invalid'), 'Server accepts another attempt after expiry');
+  $_SERVER['REQUEST_METHOD'] = 'POST';
   for ($i=0; $i<3; $i++) auth_test_check(hub_auth_rate_limit('mail', 'mail@example.invalid'), 'Allowed email request ' . ($i+1));
   auth_test_check(!hub_auth_rate_limit('mail', 'mail@example.invalid'), 'Email requests limited');
   $_SERVER['REMOTE_ADDR'] = '198.51.100.4';
@@ -199,7 +232,9 @@ try {
   $file = $bucketDir . '/' . (hexdec(substr($keyHash,0,2)) % 64) . '.json';
   file_put_contents($file, json_encode([$keyHash=>['count'=>99,'until'=>time()-1]]));
   auth_test_check(hub_auth_consume_bucket($bucketDir, $key, 1, 900), 'Expired limit becomes available');
+  auth_test_check(hub_auth_bucket_retry_after($bucketDir, $key, 1) > 0, 'Consumed final allowance shows cooldown immediately');
   file_put_contents($file, '{broken');
+  auth_test_check(hub_auth_bucket_retry_after($bucketDir, $key, 1) === 900, 'Corrupt cooldown data keeps the button blocked');
   auth_test_check(!hub_auth_consume_bucket($bucketDir, $key, 1, 900), 'Corrupt limit storage fails closed');
   auth_test_check(!hub_auth_consume_bucket($testDirectory . '/missing', 'key', 1, 900), 'Missing storage fails closed');
   auth_test_check(count(glob(HUB_AUTH_RATE_LIMIT_DIR . '/*.json')) <= 64, 'Rate-limit file count is bounded');
