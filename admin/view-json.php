@@ -1,12 +1,15 @@
 <?php
 require_once __DIR__ . '/../includes/app/admin_layout.php';
 hub_require_admin();
+require_once __DIR__ . '/../includes/app/imports/remote_sources.php';
+header('Cache-Control: no-store');
+header('X-Content-Type-Options: nosniff');
 
-$sourceDir = realpath(__DIR__ . '/../sourcedata');
+$sourceDir = realpath(hub_import_archive_dir());
 $files = [];
 if ($sourceDir && is_dir($sourceDir)) {
   foreach (glob($sourceDir . '/*.json') ?: [] as $path) {
-    if (!is_file($path)) {
+    if (!is_file($path) || is_link($path)) {
       continue;
     }
     $files[] = [
@@ -30,6 +33,17 @@ foreach ($files as $file) {
     $selected = $file;
     break;
   }
+}
+
+if (isset($_GET['raw'])) {
+  if (!$selected) {
+    http_response_code(404);
+    exit('Archive not found.');
+  }
+  header('Content-Type: application/json; charset=utf-8');
+  header('Content-Disposition: attachment; filename="' . $selected['name'] . '"');
+  readfile($selected['path']);
+  exit;
 }
 
 $content = '';
@@ -68,7 +82,7 @@ if ($selected) {
           <div class="links">
             <a href="/admin.php">Back to admin</a>
             <?php if ($selected): ?>
-              <a href="/sourcedata/<?php echo rawurlencode($selected['name']); ?>">Open raw file</a>
+              <a href="/admin/view-json.php?raw=1&amp;file=<?php echo rawurlencode($selected['name']); ?>">Open raw file</a>
             <?php endif; ?>
           </div>
         </div>
@@ -78,7 +92,7 @@ if ($selected) {
         <?php endif; ?>
 
         <?php if (!$files): ?>
-          <div class="alert info">No saved JSON files found in sourcedata.</div>
+          <div class="alert info">No saved JSON files found in the private archive.</div>
         <?php else: ?>
           <form method="get" action="/admin/view-json.php" class="import-data-controls admin-table-controls">
             <div>

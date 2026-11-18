@@ -335,8 +335,8 @@ function hub_import_upsert_source(array $input): int {
   if ($name === '' || $url === '') {
     throw new InvalidArgumentException('Import source name and URL are required.');
   }
-  if (filter_var($url, FILTER_VALIDATE_URL) === false || !in_array(strtolower((string) parse_url($url, PHP_URL_SCHEME)), ['http', 'https'], true)) {
-    throw new InvalidArgumentException('Import source URL must be a valid HTTP or HTTPS URL.');
+  if (filter_var($url, FILTER_VALIDATE_URL) === false || strtolower((string) parse_url($url, PHP_URL_SCHEME)) !== 'https') {
+    throw new InvalidArgumentException('Import source URL must be a valid HTTPS URL.');
   }
   if (!in_array($authType, ['none', 'basic'], true)) {
     throw new InvalidArgumentException('Import authentication type is not supported.');
@@ -387,7 +387,12 @@ function hub_import_upsert_source(array $input): int {
 }
 
 function hub_import_fetch_body(array $source): array {
-  $ch = curl_init((string) $source['source_url']);
+  // Validate again at fetch time: existing database rows may predate HTTPS enforcement.
+  $url = trim((string) ($source['source_url'] ?? ''));
+  if (filter_var($url, FILTER_VALIDATE_URL) === false || strtolower((string) parse_url($url, PHP_URL_SCHEME)) !== 'https') {
+    return ['ok' => false, 'body' => '', 'error' => 'Import source URL must be a valid HTTPS URL.'];
+  }
+  $ch = curl_init($url);
   if (!$ch) {
     return ['ok' => false, 'body' => '', 'error' => 'Unable to initialise cURL.'];
   }
@@ -398,8 +403,11 @@ function hub_import_fetch_body(array $source): array {
     CURLOPT_TIMEOUT => (int) ($source['timeout_seconds'] ?? 60),
     CURLOPT_CONNECTTIMEOUT => 15,
     CURLOPT_HTTPHEADER => ['Accept: application/json'],
-    CURLOPT_SSL_VERIFYPEER => !empty($source['verify_tls']),
-    CURLOPT_SSL_VERIFYHOST => !empty($source['verify_tls']) ? 2 : 0,
+    CURLOPT_HTTPGET => true,
+    CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
+    CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTPS,
+    CURLOPT_SSL_VERIFYPEER => true,
+    CURLOPT_SSL_VERIFYHOST => 2,
   ]);
   if (($source['auth_type'] ?? '') === 'basic') {
     $password = hub_import_decrypt_password($source['auth_password_ciphertext'] ?? null, $source['auth_password_nonce'] ?? null);
@@ -432,13 +440,17 @@ function hub_import_archive_key(array $source): string {
   return hub_import_slug((string) ($source['handler'] ?? $source['import_key'] ?? 'import'));
 }
 
+function hub_import_archive_dir(): string {
+  return dirname(__DIR__, 4) . '/private/sourcedata';
+}
+
 function hub_import_archive_json_body(array $source, int $fetchId, string $body, int $keep = 3): ?string {
   $body = trim($body);
   if ($body === '') {
     return null;
   }
-  $dir = dirname(__DIR__, 3) . '/sourcedata';
-  if (!is_dir($dir) && !mkdir($dir, 0755, true) && !is_dir($dir)) {
+  $dir = hub_import_archive_dir();
+  if (!is_dir($dir) && !mkdir($dir, 0770, true) && !is_dir($dir)) {
     return null;
   }
   $key = hub_import_archive_key($source);
