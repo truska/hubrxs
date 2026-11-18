@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/auth_security.php';
 
 function hub_schema_ready(): bool {
   return hub_table_exists('hub_user') && hub_table_exists('hub_customer');
@@ -399,7 +400,7 @@ function hub_logout(): void {
       'details' => ['method' => 'Logout'],
     ]);
   }
-  unset($_SESSION[HUB_SESSION_KEY], $_SESSION[HUB_PENDING_2FA_KEY], $_SESSION['hub_customer_override']);
+  unset($_SESSION[HUB_SESSION_KEY], $_SESSION[HUB_PENDING_2FA_KEY], $_SESSION['hub_totp_login'], $_SESSION['hub_login_email'], $_SESSION['hub_customer_override']);
   session_regenerate_id(true);
 }
 
@@ -424,7 +425,7 @@ function hub_find_user_by_email(string $email): ?array {
 }
 
 function hub_start_session(array $user): void {
-  unset($_SESSION['hub_customer_override']);
+  unset($_SESSION['hub_customer_override'], $_SESSION['hub_totp_login'], $_SESSION['hub_login_email']);
   $_SESSION[HUB_SESSION_KEY] = [
     'id' => (int) $user['id'],
     'email' => (string) $user['email'],
@@ -490,6 +491,10 @@ function hub_twofa_channel_enabled(): bool {
 
 function hub_create_twofa_challenge(array $user, string &$error = null): bool {
   global $pdo, $DB_OK;
+  if (!hub_auth_rate_limit('mail', (string) $user['email'])) {
+    $error = 'Too many attempts. Please try again later.';
+    return false;
+  }
   if (!$DB_OK || !($pdo instanceof PDO)) {
     $error = 'Database not available.';
     return false;
@@ -548,6 +553,7 @@ function hub_create_twofa_challenge(array $user, string &$error = null): bool {
     'user_id' => (int) $user['id'],
     'email' => (string) $user['email'],
     'method' => 'email',
+    'primary_verified' => true,
     'created_at' => time(),
   ];
   return true;
@@ -556,7 +562,7 @@ function hub_create_twofa_challenge(array $user, string &$error = null): bool {
 function hub_pending_twofa_user(): ?array {
   global $pdo, $DB_OK;
   $pending = $_SESSION[HUB_PENDING_2FA_KEY] ?? null;
-  if (!$pending || !isset($pending['user_id'])) {
+  if (!$pending || !isset($pending['user_id']) || empty($pending['primary_verified']) || (int) ($pending['created_at'] ?? 0) < time() - 600) {
     return null;
   }
   if (!$DB_OK || !($pdo instanceof PDO)) {
@@ -566,7 +572,7 @@ function hub_pending_twofa_user(): ?array {
     $stmt = $pdo->prepare('SELECT * FROM hub_user WHERE id = :id AND archived = 0 LIMIT 1');
     $stmt->execute([':id' => (int) $pending['user_id']]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
-    return $row ?: null;
+    return $row && (int) ($row['login_enabled'] ?? 1) === 1 ? $row : null;
   } catch (PDOException $e) {
     return null;
   }
@@ -603,9 +609,9 @@ function hub_verify_twofa_code(int $userId, string $code, string &$error = null)
       return false;
     }
 
-    $update = $pdo->prepare('UPDATE hub_user_twofa SET used_at = NOW() WHERE id = :id LIMIT 1');
+    $update = $pdo->prepare('UPDATE hub_user_twofa SET used_at = NOW() WHERE id = :id AND used_at IS NULL AND expires_at > NOW() LIMIT 1');
     $update->execute([':id' => (int) $row['id']]);
-    return true;
+    return $update->rowCount() === 1;
   } catch (PDOException $e) {
     $error = 'Unable to verify code.';
     return false;
@@ -613,66 +619,102 @@ function hub_verify_twofa_code(int $userId, string $code, string &$error = null)
 }
 
 function hub_login_with_password(string $email, string $password, string &$error = null): string {
-  $user = hub_find_user_by_email($email);
-  if (!$user) {
-    hub_record_login_failure('Password', 'account_not_found', null, $email);
-    $error = 'Invalid credentials.';
+  unset($_SESSION[HUB_PENDING_2FA_KEY], $_SESSION['hub_totp_login']);
+  if (!hub_auth_rate_limit('login', $email)) {
+    $error = 'Too many attempts. Please try again later.';
     return 'error';
   }
-  if ((int) ($user['login_enabled'] ?? 1) !== 1 || (int) ($user['archived'] ?? 0) === 1) {
-    hub_record_login_failure('Password', 'account_disabled', $user, $email);
-    $error = 'Account disabled.';
-    return 'error';
+  $started = hrtime(true);
+  try {
+    $user = hub_find_user_by_email($email);
+    // A real password check also runs for unknown/passwordless accounts.
+    $dummyHash = '$2y$12$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2uheWG/igi.';
+    $hash = (string) ($user['password_hash'] ?? '');
+    $validPassword = password_verify($password, $hash !== '' ? $hash : $dummyHash);
+    if (!$user || !$validPassword || $hash === '' || (int) ($user['login_enabled'] ?? 1) !== 1 || (int) ($user['archived'] ?? 0) === 1) {
+      hub_record_login_failure('Password', 'invalid_credentials', $user, $email);
+      $error = 'Invalid credentials.';
+      return 'error';
+    }
+    if (hub_twofa_channel_enabled() || (int) ($user['twofa_enabled'] ?? 0) === 1) {
+      $_SESSION[HUB_PENDING_2FA_KEY] = [
+        'user_id' => (int) $user['id'],
+        'email' => (string) $user['email'],
+        'method' => '',
+        'primary_verified' => true,
+        'created_at' => time(),
+      ];
+      return '2fa';
+    }
+    hub_start_session($user);
+    hub_record_login($user, 'Password');
+    return 'ok';
+  } finally {
+    // Cover ordinary hash-cost differences in older accounts as well as DB work.
+    $remaining = 500000000 - (hrtime(true) - $started);
+    if ($remaining > 0) {
+      usleep((int) ceil($remaining / 1000));
+    }
   }
-
-  $hash = (string) ($user['password_hash'] ?? '');
-  if ($hash === '' || !password_verify($password, $hash)) {
-    hub_record_login_failure('Password', 'invalid_password', $user, $email);
-    $error = 'Invalid credentials.';
-    return 'error';
-  }
-
-  if (hub_twofa_channel_enabled() || (int) ($user['twofa_enabled'] ?? 0) === 1) {
-    $_SESSION[HUB_PENDING_2FA_KEY] = [
-      'user_id' => (int) $user['id'],
-      'email' => (string) $user['email'],
-      'method' => '',
-      'created_at' => time(),
-    ];
-    return '2fa';
-  }
-
-  hub_start_session($user);
-  hub_record_login($user, 'Password');
-  return 'ok';
 }
 
 function hub_start_totp_login(string $email, string &$error = null): bool {
-  $user = hub_find_user_by_email($email);
-  if (!$user || (int) ($user["login_enabled"] ?? 1) !== 1 || (int) ($user["archived"] ?? 0) === 1) {
-    hub_record_login_failure('AuthApp', $user ? 'account_disabled' : 'account_not_found', $user, $email);
-    $error = "Authenticator app is not available for that email. Use password to continue.";
-    return false;
-  }
-
-  $record = hub_totp_record_for_user((int) $user["id"]);
-  if (!$record || (int) ($record["enabled"] ?? 0) !== 1 || empty($record["confirmed_at"])) {
-    hub_record_login_failure('AuthApp', 'authenticator_not_configured', $user, $email);
-    $error = "Authenticator app is not available for that email. Use password to continue.";
-    return false;
-  }
-
-  $_SESSION[HUB_PENDING_2FA_KEY] = [
-    "user_id" => (int) $user["id"],
-    "email" => (string) $user["email"],
-    "method" => "totp",
-    "setup_required" => 0,
-    "created_at" => time(),
-  ];
+  // No user lookup and no privileged pending-2FA state before proof of possession.
+  unset($_SESSION[HUB_PENDING_2FA_KEY]);
+  $_SESSION['hub_totp_login'] = ['email' => strtolower(trim($email)), 'created_at' => time()];
   return true;
 }
 
+function hub_complete_totp_login(string $code, string &$error = null): bool {
+  global $pdo, $DB_OK;
+  $attempt = $_SESSION['hub_totp_login'] ?? [];
+  $email = (string) ($attempt['email'] ?? '');
+  $error = 'Unable to sign in with those details. Try again or use another method.';
+  if (!hub_auth_rate_limit('login', $email)) {
+    $error = 'Too many attempts. Please try again later.';
+    return false;
+  }
+  $started = hrtime(true);
+  try {
+    $user = hub_find_user_by_email($email);
+    $record = hub_totp_record_for_user((int) ($user['id'] ?? PHP_INT_MAX));
+    $counter = null;
+    $valid = hub_totp_verify_code((string) ($record['secret'] ?? 'JBSWY3DPEHPK3PXP'), $code, $counter);
+    if (!$valid || !$user || !$record || !$DB_OK || !($pdo instanceof PDO)
+        || (int) ($attempt['created_at'] ?? 0) < time() - 600
+        || (int) ($user['login_enabled'] ?? 1) !== 1 || (int) ($user['archived'] ?? 0) === 1
+        || (int) ($record['enabled'] ?? 0) !== 1 || empty($record['confirmed_at'])) {
+      hub_record_login_failure('AuthApp', 'invalid_credentials', $user, $email);
+      return false;
+    }
+    try {
+      $stmt = $pdo->prepare('UPDATE hub_user_totp SET last_counter = :counter, modified = NOW() WHERE user_id = :user_id AND enabled = 1 AND confirmed_at IS NOT NULL AND (last_counter IS NULL OR last_counter < :new_counter)');
+      $stmt->execute([':counter' => $counter, ':new_counter' => $counter, ':user_id' => (int) $user['id']]);
+      if ($stmt->rowCount() !== 1) {
+        return false;
+      }
+    } catch (PDOException $e) {
+      return false;
+    }
+    hub_start_session($user);
+    hub_record_login($user, 'AuthApp');
+    unset($_SESSION[HUB_PENDING_2FA_KEY]);
+    $error = null;
+    return true;
+  } finally {
+    $remaining = 150000000 - (hrtime(true) - $started);
+    if ($remaining > 0) {
+      usleep((int) ceil($remaining / 1000));
+    }
+  }
+}
+
 function hub_complete_twofa(string $code, string &$error = null): bool {
+  $email = (string) ($_SESSION[HUB_PENDING_2FA_KEY]['email'] ?? '');
+  if (!hub_auth_rate_limit('login', $email)) {
+    $error = 'Too many attempts. Please try again later.';
+    return false;
+  }
   if (hub_pending_twofa_method() === 'totp') {
     return hub_complete_totp_twofa($code, $error);
   }
@@ -840,7 +882,7 @@ function hub_pending_twofa_setup_data(?array $user = null): ?array {
   if ($user === null) {
     $user = hub_pending_twofa_user();
   }
-  if (!$user || hub_pending_twofa_method() !== 'totp') {
+  if (!$user || !hub_pending_twofa_setup_required()) {
     return null;
   }
   $record = hub_totp_record_for_user((int) $user['id']);
@@ -886,8 +928,12 @@ function hub_complete_totp_twofa(string $code, string &$error = null): bool {
     return false;
   }
   try {
-    $stmt = $pdo->prepare('UPDATE hub_user_totp SET enabled = 1, confirmed_at = COALESCE(confirmed_at, NOW()), last_counter = :last_counter, modified = NOW() WHERE user_id = :user_id LIMIT 1');
-    $stmt->execute([':last_counter' => $matchedCounter, ':user_id' => (int) $pending['id']]);
+    $stmt = $pdo->prepare('UPDATE hub_user_totp SET enabled = 1, confirmed_at = COALESCE(confirmed_at, NOW()), last_counter = :last_counter, modified = NOW() WHERE user_id = :user_id AND (last_counter IS NULL OR last_counter < :new_counter) LIMIT 1');
+    $stmt->execute([':last_counter' => $matchedCounter, ':new_counter' => $matchedCounter, ':user_id' => (int) $pending['id']]);
+    if ($stmt->rowCount() !== 1) {
+      $error = 'Invalid authenticator code.';
+      return false;
+    }
   } catch (PDOException $e) {
     hub_record_login_failure('AuthApp', 'code_verification_error', $pending);
     $error = 'Unable to verify authenticator code.';
@@ -1327,8 +1373,7 @@ function hub_request_password_reset(string $email): array {
   }
 
   $user = hub_find_user_by_email($email);
-  if (!$user) {
-    // Do not leak account existence.
+  if (!$user || (int) ($user['login_enabled'] ?? 1) !== 1 || (int) ($user['archived'] ?? 0) === 1) {
     return $default;
   }
 

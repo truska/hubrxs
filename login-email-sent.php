@@ -25,7 +25,7 @@ $messages = hub_flash_messages();
   <div class="wrap auth-wrap">
     <div class="card">
       <h1>Check your email</h1>
-      <p>We have sent a login link. Open it from your email to finish signing in.</p>
+      <p>If this account is eligible, a sign-in link will be sent. Open the link from your email to finish signing in.</p>
 
       <?php foreach ($messages as $msg): ?>
         <div class="alert <?php echo hub_h($msg['type']); ?>"><?php echo hub_h($msg['message']); ?></div>

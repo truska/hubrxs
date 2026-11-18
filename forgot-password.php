@@ -13,12 +13,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if (!hub_verify_csrf($_POST['csrf'] ?? '')) {
     $error = 'Session expired. Please try again.';
   } else {
-    $email = (string) ($_POST['email'] ?? '');
-    $result = hub_request_password_reset($email);
-    $sent = true; // always show success to avoid leaking accounts
-    $mailSent = (bool) ($result['sent'] ?? false);
-    if (!$mailSent) {
-      $messages[] = ['type' => 'error', 'message' => 'We could not deliver the reset email. Please try again later or contact an administrator.'];
+    $email = strtolower(trim((string) ($_POST['email'] ?? '')));
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+      $error = 'Enter a valid email address.';
+    } else {
+      hub_auth_defer_mail('reset', $email);
+      $sent = true;
     }
   }
 }
@@ -42,7 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <div class="wrap auth-wrap">
     <div class="card">
       <h1>Reset your password</h1>
-      <p>Enter your email and we will send a reset link (valid for 30 minutes).</p>
+      <p>Enter your email to request a password reset link (valid for 30 minutes).</p>
 
       <?php foreach ($messages as $msg): ?>
         <div class="alert <?php echo hub_h($msg['type']); ?>"><?php echo hub_h($msg['message']); ?></div>
@@ -51,7 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="alert error"><?php echo hub_h($error); ?></div>
       <?php endif; ?>
       <?php if ($sent): ?>
-        <div class="alert success">If the email exists, a reset link has been sent.</div>
+        <div class="alert success">If this account is eligible, a password reset link will be sent.</div>
       <?php endif; ?>
 
       <form method="post" action="forgot-password.php">

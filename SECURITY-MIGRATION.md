@@ -125,3 +125,102 @@ the read-only checks above.
   run `python3 ../private/security-review/check.py` from the web root. It needs
   Python 3, OpenSSL CLI, PHP CLI with cURL, and permission to bind loopback.
   It contacts only its temporary loopback HTTPS server, not One Source.
+
+## Follow-up: prevent account discovery during sign-in
+
+The email step is now **Continue**, validates format only, and enables the same
+Password / Auth App / Email Link choices for every syntactically valid address.
+The new `login-auth-app.php` shows the same code-entry form before looking up any
+account. Unknown, disabled, archived, unconfigured and incorrect-code attempts
+receive the same failure; an authenticator must already be enabled and confirmed
+for this path to sign in. Anonymous selection never unlocks authenticator setup,
+QR codes, or the verified-password second-factor session. Existing-password
+second-factor sessions expire after ten minutes. Previously pending sessions
+without the new primary-credential marker must restart sign-in after deployment.
+
+Password failures use one message, including disabled accounts, and run a dummy
+password verification for absent/passwordless accounts. A minimum 500ms processing
+period covers normal legacy password-cost differences; this is not a guarantee
+against every statistical timing signal under server overload. Authenticator
+codes and emailed second-factor codes are consumed with conditional updates to
+prevent concurrent reuse. Existing configured authenticator secrets are no longer
+available through the pending-setup QR helper.
+
+Email-link and password-recovery pages always give neutral responses, including
+ineligible accounts, delivery failures and throttling. For anonymous requests,
+account lookup and mail delivery run in a shutdown callback **after PHP-FPM
+finishes the response** and releases the session lock. There is no mail queue,
+new cron job or database migration. Operational errors are logged privately;
+public delivery errors must not be reintroduced. Existing authenticated account
+password-reset actions keep their existing synchronous behavior.
+
+### Additional deployment requirements
+
+- Deploy `includes/app/auth_security.php`, `login-auth-app.php`, the updated
+  `includes/app/auth.php`, `index.php`, `forgot-password.php`, and
+  `login-email-sent.php`. New public PHP files must be readable (normally 0664).
+- **PHP-FPM and an enabled `fastcgi_finish_request()` are required for anonymous
+  authentication email delivery.** This matches development's PHP-FPM 8.4 setup
+  (`disable_functions` is empty). Other SAPIs fail closed: they show the same
+  neutral response but log the missing capability and do not send. Confirm the
+  live pool supports the function; do not introduce synchronous fallback delivery.
+- The PHP account must be able to create/read/write/lock
+  `<site>/private/auth-rate-limits`. It is created automatically with mode 0770
+  under the existing private directory when possible. If pre-created by an
+  operator, assign the live PHP account and private ACLs first. Storage failures
+  deny attempts and log a warning rather than bypass limits. Keep these files
+  private; do not migrate development counters or wipe live counters routinely.
+- Limits per 15-minute window: Continue/method selection 30 per address and 120
+  per IP; credential/code attempts 10 per address and 100 per IP; authentication
+  email requests 3 per address and 20 per IP. Password and authenticator guesses
+  share the credential budget; anonymous sign-in links, reset requests and
+  additional-verification emails share the mail budget. Counters are independent
+  of sessions/account existence, case-normalized, hashed, locked across workers,
+  and expire automatically. Only 64 shard files can be created; each has bounded
+  entries and refuses new identities if full. No permanent account lockout.
+- IP limits use REMOTE_ADDR by default and ignore untrusted forwarding headers.
+  **Behind a reverse proxy, configure `HUB_AUTH_TRUSTED_PROXIES` in the PHP-FPM
+  pool environment** with a comma-separated list of exact trusted proxy IPs
+  (e.g. `env[HUB_AUTH_TRUSTED_PROXIES] = 192.0.2.10`). The edge must correctly
+  overwrite/append X-Forwarded-For; the code walks the chain right-to-left and
+  stops at the first untrusted address. Never trust arbitrary peers or client
+  headers. Without this setting, users behind one proxy share its IP budget.
+  Check the actual topology; the example IP is not a deployment setting.
+- This filesystem limiter is for a single application server or a correctly
+  shared filesystem with working flock semantics. Multiple independent servers
+  need shared limits (database/Redis or edge controls) before scaling out.
+
+### Follow-up validation
+
+`php8.4 tools/test_auth_security.php` passed 109 isolated checks using temporary
+files and an in-memory test database: identical HTML/redirects across account
+states, neutral password/reset/authenticator failures, successful password and
+app sign-in, replay rejection, logout, timing floor, address/IP/session-independent
+limits, trusted-proxy parsing, expiry/corruption/storage failure, bounded storage,
+and concurrent requests. Fake email workers confirmed lookup/delivery happens
+only after response completion and that send success/failure cannot alter the
+public response. No real email or external service is involved.
+
+A development Apache/PHP-FPM origin check also passed: secure session-cookie
+flags, all three Continue choices for a synthetic unknown address, the generic
+authenticator-code screen with no setup secret, and HTTP 403 for both CLI test
+entry points. The PHP account created its private limit directory successfully.
+New public PHP files are 0664 and have the same readable ACL pattern as the
+existing password page. No email request was submitted during this origin check.
+
+`php8.4 tools/test_auth_mysql.php` passed 18 checks against development MySQL with
+connection-local TEMPORARY tables shadowing users, TOTP, email codes and audit
+logs: required second factor, new/existing authenticator setup, fresh-code sign-in,
+TOTP replay rejection, direct app login and expiry, email-code verification and
+reuse rejection, and denial of
+anonymous authenticator enrollment/secret access. No real account/audit records
+were changed and no email was sent. Both test entry points deny HTTP requests.
+
+After deployment, compare status, redirects and rendered controls for an unknown
+address and an authorized test account after Continue and method selection. Check
+neutral reset and sign-in email responses. With the authorized test account,
+verify actual email delivery, password sign-in, configured app sign-in, required
+additional verification, and logout. Confirm counters survive a new browser
+session and expire; use dedicated test identities/IPs to avoid disrupting users.
+Do not automate repeated attempts against real users. Review private logs for
+storage/FPM/delivery failures without exposing operational details in the UI.
